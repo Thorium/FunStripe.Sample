@@ -43,7 +43,8 @@ let demoCustomerAndSetup() =
             match setupResult with
             | Ok setupIntent ->
                 printfn $"✓ Setup intent created: {setupIntent.Id}"
-                printfn $"Client secret: {setupIntent.ClientSecret.Substring(0, 20)}..." // Only show part for security
+                let previewLen = min setupIntent.ClientSecret.Length 20
+                printfn $"Client secret: {setupIntent.ClientSecret.Substring(0, previewLen)}..." // Only show part for security
                 printfn "Use this client secret in your frontend to collect payment method"
             | Error error ->
                 printfn "✗ Failed to create setup intent"

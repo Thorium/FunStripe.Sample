@@ -35,7 +35,7 @@ let createPaymentEndpoint (config: StripeConfig) (request: PaymentRequest) =
     async {
         try
             // Extract customer name parts
-            let nameParts = request.CustomerName.Split(' ', 2)
+            let nameParts = if isNull request.CustomerName then [|""|] else request.CustomerName.Split(' ', 2)
             let firstName = nameParts.[0]
             let lastName = if nameParts.Length > 1 then nameParts.[1] else ""
             
@@ -74,7 +74,7 @@ let createSetupEndpoint (config: StripeConfig) (request: SetupRequest) =
     async {
         try
             // Extract customer name parts
-            let nameParts = request.CustomerName.Split(' ', 2)
+            let nameParts = if isNull request.CustomerName then [|""|] else request.CustomerName.Split(' ', 2)
             let firstName = nameParts.[0]
             let lastName = if nameParts.Length > 1 then nameParts.[1] else ""
             
