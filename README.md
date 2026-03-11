@@ -16,7 +16,7 @@ This sample covers the most important use cases for a minimum viable product (MV
 
 ## Prerequisites
 
-- .NET 6.0 or later
+- .NET 8.0 or later
 - Stripe account (test keys for development)
 - FunStripeLite NuGet package
 
@@ -24,29 +24,60 @@ This sample covers the most important use cases for a minimum viable product (MV
 
 ### 1. Configuration
 
-First, configure your Stripe keys in your application:
+Configure your Stripe keys in `src/appsettings.json`:
 
-```fsharp
-open FunStripe
-open FunStripe.StripeModel
-open FunStripe.StripeRequest
-
-// Configure your Stripe keys (use test keys for development)
-let stripePublishableKey = "pk_test_..."
-let stripeSecretKey = "sk_test_..."
-
-// Set up Stripe account configuration
-type StripeAccount = 
-    | Live
-    | Test
-
-let getStripeConfig account =
-    match account with
-    | Live -> ("pk_live_...", "sk_live_...")
-    | Test -> (stripePublishableKey, stripeSecretKey)
+```json
+{
+  "Stripe": {
+    "TestPublishableKey": "pk_test_your_key_here",
+    "TestSecretKey": "sk_test_your_key_here",
+    "LivePublishableKey": "pk_live_...",
+    "LiveSecretKey": "sk_live_...",
+    "WebhookEndpointSecret": "whsec_your_secret_here"
+  },
+  "Environment": "Test"
+}
 ```
 
-### 2. Creating Customers
+The configuration is loaded via `Microsoft.Extensions.Configuration` in `StripeService.fs`:
+
+```fsharp
+open Microsoft.Extensions.Configuration
+
+let config = loadStripeConfig ()
+// config.PublishableKey, config.SecretKey, config.WebhookEndpointSecret
+```
+
+Also update the frontend publishable key in `frontend/stripe-integration.js`:
+
+```javascript
+const STRIPE_PUBLISHABLE_KEY = 'pk_test_your_actual_key_here';
+```
+
+### 2. Run the Sample
+
+```bash
+cd src
+dotnet run
+```
+
+This will demonstrate:
+- Customer creation
+- Setup intents (for saving payment methods)
+- Payment intents (for processing payments)
+- Complete payment flows
+
+### 3. Test the Frontend
+
+Open `frontend/index.html` in a browser to see:
+- Stripe Elements integration
+- Card setup forms
+- Payment processing flows
+- Error handling examples
+
+## Core Patterns
+
+### Creating Customers
 
 ```fsharp
 let createCustomer (firstName: string) (lastName: string) (email: string) =
@@ -63,7 +94,7 @@ let createCustomer (firstName: string) (lastName: string) (email: string) =
     }
 ```
 
-### 3. Setup Intents (for saving payment methods)
+### Setup Intents (for saving payment methods)
 
 ```fsharp
 let createSetupIntent (customerId: string) =
@@ -80,7 +111,7 @@ let createSetupIntent (customerId: string) =
     }
 ```
 
-### 4. Payment Intents (for one-time payments)
+### Payment Intents (for one-time payments)
 
 ```fsharp
 let createPaymentIntent (amount: int64) (currency: string) (customerId: string) =
@@ -99,20 +130,43 @@ let createPaymentIntent (amount: int64) (currency: string) (customerId: string) 
     }
 ```
 
-### 5. Frontend Integration
+### Frontend Integration
 
-See the `frontend/` directory for complete examples of:
-- Stripe Elements configuration
-- Card setup forms
-- Payment confirmation flows
-- Error handling
+See the `frontend/` directory for complete examples. Key patterns:
 
-### 6. Webhook Handling
+```javascript
+// Initialize Stripe Elements
+const stripe = Stripe('pk_test_...');
+const elements = stripe.elements();
+const cardElement = elements.create('card', { style: elementStyles });
+cardElement.mount('#card-element');
 
-See the `webhooks/` directory for examples of:
-- Webhook endpoint setup
-- Event verification
-- Handling different event types
+// Confirm a payment
+const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+    payment_method: {
+        card: cardElement,
+        billing_details: { name: 'Customer Name' }
+    }
+});
+```
+
+### Webhook Handling
+
+See the `webhooks/` directory for complete examples. Key patterns:
+
+```fsharp
+let processWebhookEvent eventType eventData =
+    async {
+        match eventType with
+        | PaymentIntentSucceeded ->
+            let! result = handlePaymentSuccess paymentIntent
+            return result
+        | SetupIntentSucceeded ->
+            let! result = handleSetupSuccess setupIntent
+            return result
+        // ... handle other events
+    }
+```
 
 ## Architecture Patterns
 
@@ -154,31 +208,146 @@ let processPayment() =
 FunStripeLite.Sample/
 ├── README.md                 # This file
 ├── src/
-│   ├── Program.fs           # Main sample application
-│   ├── StripeService.fs     # Core Stripe operations
+│   ├── Program.fs              # Main sample application
+│   ├── StripeService.fs        # Core Stripe operations
+│   ├── IntegrationExample.fs   # Web API integration patterns
+│   ├── appsettings.json        # Configuration (Stripe keys)
 │   └── FunStripeLite.Sample.fsproj
 ├── frontend/
-│   ├── index.html           # Sample payment form
-│   ├── stripe-integration.js  # Stripe Elements integration
-│   └── styles.css           # Basic styling
+│   ├── index.html              # Sample payment form
+│   ├── stripe-integration.js   # Stripe Elements integration
+│   └── styles.css              # Basic styling
 └── webhooks/
-    ├── WebhookHandler.fs    # Webhook processing
-    └── Events.fs            # Event type definitions
+    ├── WebhookHandler.fs       # Webhook processing
+    └── Events.fs               # Event type definitions
 ```
 
 ## Security Considerations
 
-- **Never expose secret keys in frontend code** - only use publishable keys
-- **Validate webhook signatures** to ensure events come from Stripe
-- **Use HTTPS** for all payment-related endpoints
-- **Implement proper error handling** to avoid exposing sensitive information
+### API Keys
+- Never expose secret keys in frontend code -- only use publishable keys
+- Use environment variables or a key vault for production keys
+- Rotate keys regularly
+- Use different keys for test and production
+
+### Webhook Security
+- Always verify webhook signatures (see `WebhookHandler.fs`)
+- Use HTTPS endpoints only
+- Implement idempotency to handle duplicate events
+- Store and replay events if processing fails
+
+### Payment Security
+- Never store card details yourself -- use Stripe Elements
+- Implement proper error handling to avoid exposing sensitive information
+- Log security events for auditing
+
+## Architecture Recommendations
+
+### Production Web API Structure
+
+1. **Endpoints**:
+   - `POST /api/customers` -- Create customers
+   - `POST /api/payment-intents` -- Create payment intents
+   - `POST /api/setup-intents` -- Create setup intents
+   - `POST /webhooks/stripe` -- Handle Stripe webhooks
+
+2. **Service Layer**:
+   - `StripeService` -- Wraps FunStripeLite operations
+   - `PaymentService` -- Business logic for payments
+   - `CustomerService` -- Customer management
+   - `WebhookService` -- Event processing
+
+3. **Database Integration**:
+   - Store customer mappings (your user ID <-> Stripe customer ID)
+   - Track payment statuses and order history
+   - Log webhook events for idempotency
+   - Store payment method references
+
+### Business Logic Error Handling
+
+Define your own error types alongside Stripe's:
+
+```fsharp
+type PaymentError =
+    | StripeApiError of StripeError
+    | InsufficientFunds
+    | InvalidCustomer
+    | OrderNotFound
+```
 
 ## Testing
 
-Use Stripe's test environment and test card numbers:
+### Test Cards (Stripe Test Mode)
+
 - Successful payment: `4242424242424242`
-- Declined payment: `4000000000000002` 
+- Declined payment: `4000000000000002`
 - 3D Secure required: `4000002500003155`
+- Insufficient funds: `4000000000009995`
+
+### Test Scenarios
+
+1. **Happy path**: Successful payment flows
+2. **Error handling**: Failed payments, network errors
+3. **Edge cases**: Large amounts, international cards
+4. **Security**: Invalid webhooks, tampered requests
+
+### Automated Testing Example
+
+```fsharp
+[<Test>]
+let ``should create customer successfully`` () =
+    async {
+        let! result = createCustomer "John" "Doe" "john@test.com"
+        match result with
+        | Ok customer -> Assert.IsNotEmpty(customer.Id)
+        | Error error -> Assert.Fail($"Unexpected error: {error}")
+    }
+```
+
+## Deployment Checklist
+
+### Before Going Live
+- [ ] Replace test keys with live Stripe keys
+- [ ] Set up webhook endpoints with HTTPS
+- [ ] Configure proper error monitoring
+- [ ] Set up payment reconciliation
+- [ ] Test all payment flows thoroughly
+- [ ] Configure fraud prevention rules
+- [ ] Set up customer support processes
+
+### Monitoring and Alerts
+- [ ] Payment success/failure rates
+- [ ] Webhook delivery status
+- [ ] API response times
+- [ ] Error rates and patterns
+- [ ] Revenue and transaction volume
+
+## Common Integration Patterns
+
+### Subscription Billing
+
+```fsharp
+let createSubscription customerId priceId paymentMethodId =
+    async {
+        let subscriptionRequest = {
+            Customer = customerId
+            Items = [{ Price = priceId }]
+            DefaultPaymentMethod = paymentMethodId
+        }
+        let! result = Stripe.createSubscription subscriptionRequest
+        return result
+    }
+```
+
+### Refund Processing
+
+```fsharp
+let processRefund paymentIntentId amount =
+    async {
+        let! result = Stripe.createRefund paymentIntentId amount
+        return result
+    }
+```
 
 ## Next Steps
 
@@ -193,5 +362,6 @@ For production applications, consider implementing:
 
 - [Stripe API Documentation](https://stripe.com/docs/api)
 - [FunStripeLite on NuGet](https://www.nuget.org/packages/FunStripeLite/)
-
 - [Stripe Elements Documentation](https://stripe.com/docs/stripe-js)
+- [Webhook Best Practices](https://stripe.com/docs/webhooks/best-practices)
+- [Stripe Test Cards](https://docs.stripe.com/testing)

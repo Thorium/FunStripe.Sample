@@ -49,8 +49,10 @@ let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload:
             let computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))
             let computedSignature = BitConverter.ToString(computedHash).Replace("-", "").ToLower()
             
-            // Secure comparison
-            computedSignature = extractedSignature
+            // Constant-time comparison to prevent timing attacks
+            let a = System.Text.Encoding.UTF8.GetBytes(computedSignature)
+            let b = System.Text.Encoding.UTF8.GetBytes(extractedSignature)
+            CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan(a), System.ReadOnlySpan(b))
     with
     | ex ->
         printfn $"Error verifying webhook signature: {ex.Message}"
@@ -139,20 +141,21 @@ let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) 
 
 /// Main webhook endpoint handler
 /// This would typically be called from your web framework (ASP.NET Core, Giraffe, etc.)
-let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: string) =
+/// In a real implementation, eventType and eventId would be parsed from the JSON payload.
+let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: string) (eventType: string) (eventId: string) =
     async {
         try
             // 1. Verify the signature first (critical for security)
             let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             if not (verifyWebhookSignature config signature payload timestamp) then
-                printfn "⚠ Invalid webhook signature"
+                printfn "[WARN] Invalid webhook signature"
                 return (InvalidSignature, 400)
             else
             
-            // 2. Parse the webhook event (simplified for sample)
+            // 2. Construct webhook event from parsed payload data
             let stripeEvent = {
-                Id = "evt_mock_123"
-                Type = "payment_intent.succeeded"
+                Id = eventId
+                Type = eventType
                 Created = timestamp
                 Livemode = false
                 Data = None
@@ -163,21 +166,21 @@ let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: s
             
             match result with
             | Processed msg ->
-                printfn $"✓ Webhook processed successfully: {msg}"
+                printfn $"[OK] Webhook processed successfully: {msg}"
                 return result, 200
             | Failed msg ->
-                printfn $"✗ Webhook processing failed: {msg}"
+                printfn $"[FAIL] Webhook processing failed: {msg}"
                 return result, 500
             | InvalidSignature ->
-                printfn "✗ Invalid webhook signature"
+                printfn "[FAIL] Invalid webhook signature"
                 return result, 400
-            | UnsupportedEvent eventType ->
-                printfn $"ℹ Unsupported event type: {eventType}"
+            | UnsupportedEvent unsupported ->
+                printfn $"[INFO] Unsupported event type: {unsupported}"
                 return result, 200  // Still return 200 to acknowledge receipt
                 
         with
         | ex ->
-            printfn $"✗ Exception handling webhook: {ex.Message}"
+            printfn $"[FAIL] Exception handling webhook: {ex.Message}"
             return Failed ex.Message, 500
     }
 

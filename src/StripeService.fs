@@ -1,45 +1,50 @@
 module StripeService
 
 open System
-open FunStripe
-open FunStripe.StripeModel
-open FunStripe.StripeRequest
+open System.IO
+open Microsoft.Extensions.Configuration
 
 /// Configuration for Stripe accounts
 type StripeConfig = {
     PublishableKey: string
     SecretKey: string
+    WebhookEndpointSecret: string
 }
 
-/// Stripe environment configuration
-let getStripeConfig (useTestKeys: bool) =
-    if useTestKeys then
-        {
-            PublishableKey = "pk_test_..." // Replace with your test publishable key
-            SecretKey = "sk_test_..."      // Replace with your test secret key
-        }
-    else
-        {
-            PublishableKey = "pk_live_..." // Replace with your live publishable key
-            SecretKey = "sk_live_..."      // Replace with your live secret key
-        }
+/// Load Stripe configuration from appsettings.json
+let loadStripeConfig () =
+    let config =
+        ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional = false, reloadOnChange = false)
+            .Build()
+
+    let environment = config.["Environment"]
+    let stripe = config.GetSection("Stripe")
+
+    let publishableKey, secretKey =
+        match environment with
+        | "Test" | "test" ->
+            stripe.["TestPublishableKey"], stripe.["TestSecretKey"]
+        | _ ->
+            stripe.["LivePublishableKey"], stripe.["LiveSecretKey"]
+
+    {
+        PublishableKey = publishableKey
+        SecretKey = secretKey
+        WebhookEndpointSecret = stripe.["WebhookEndpointSecret"]
+    }
 
 /// Creates a new Stripe customer
-/// This is a simplified example - in the actual application code, this would call
-/// the Stripe module which has more sophisticated logic
+/// This is a mock implementation showing the expected pattern.
+/// In a real application, this would call FunStripe internally.
 let createCustomer (config: StripeConfig) (firstName: string) (lastName: string) (email: string) =
     async {
         try
-            // This is a mock implementation showing the expected pattern
-            // In the real application code, this calls Stripe.createCustomer which
-            // uses FunStripe internally with proper error handling
-
             printfn $"Mock: Creating customer {firstName} {lastName} ({email})"
-            printfn "In real code, this would call Stripe.createCustomer"
 
-            // Simulate successful customer creation
             let mockCustomer = {|
-                Id = $"cus_mock_{System.Guid.NewGuid().ToString().Substring(0, 8)}"
+                Id = $"cus_mock_{Guid.NewGuid().ToString().Substring(0, 8)}"
                 Email = email
                 Name = $"{firstName} {lastName}"
             |}
@@ -51,17 +56,14 @@ let createCustomer (config: StripeConfig) (firstName: string) (lastName: string)
     }
 
 /// Creates a setup intent for saving a payment method
-/// This shows the pattern used in the actual application code
 let createSetupIntent (config: StripeConfig) (customerId: string) =
     async {
         try
             printfn $"Mock: Creating setup intent for customer {customerId}"
-            printfn "In real code, this would call Stripe.createSetupIntent"
 
-            // Simulate successful setup intent creation
             let mockSetupIntent = {|
-                Id = $"seti_mock_{System.Guid.NewGuid().ToString().Substring(0, 8)}"
-                ClientSecret = $"seti_mock_{System.Guid.NewGuid().ToString()}_secret"
+                Id = $"seti_mock_{Guid.NewGuid().ToString().Substring(0, 8)}"
+                ClientSecret = $"seti_mock_{Guid.NewGuid().ToString()}_secret"
                 CustomerId = customerId
             |}
 
@@ -72,19 +74,17 @@ let createSetupIntent (config: StripeConfig) (customerId: string) =
     }
 
 /// Creates a payment intent for processing a one-time payment
-/// This shows the pattern that would be used for payment processing
 let createPaymentIntent (config: StripeConfig) (amount: int64) (currency: string) (customerId: string option) =
     async {
         try
             printfn $"Mock: Creating payment intent for {amount} {currency}"
-            if customerId.IsSome then
-                printfn $"  Customer: {customerId.Value}"
-            printfn "In real code, this would call Stripe.createPaymentIntent"
+            match customerId with
+            | Some id -> printfn $"  Customer: {id}"
+            | None -> ()
 
-            // Simulate successful payment intent creation
             let mockPaymentIntent = {|
-                Id = $"pi_mock_{System.Guid.NewGuid().ToString().Substring(0, 8)}"
-                ClientSecret = $"pi_mock_{System.Guid.NewGuid().ToString()}_secret"
+                Id = $"pi_mock_{Guid.NewGuid().ToString().Substring(0, 8)}"
+                ClientSecret = $"pi_mock_{Guid.NewGuid().ToString()}_secret"
                 Amount = amount
                 Currency = currency
                 CustomerId = customerId
@@ -107,8 +107,11 @@ let handleStripeError (error: string) =
 /// ====================================
 ///
 /// This sample uses mock implementations to demonstrate the patterns and structure.
-/// The actual real life platforms often use a custom Stripe module that wraps FunStripe
-/// with additional business logic, error handling, and database integration.
+/// In a real application, you would import and use FunStripe types:
+///
+///   open FunStripe
+///   open FunStripe.StripeModel
+///   open FunStripe.StripeRequest
 ///
 /// Key functions in a real implementation could be something like:
 /// - Stripe.createCustomer : Account -> Guid -> string -> string -> string -> Async<Result<Customer, StripeError>>

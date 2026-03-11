@@ -90,7 +90,7 @@ document.getElementById('setup-form').addEventListener('submit', async (event) =
             showResult(resultElement, `Setup failed: ${error.message}`, false);
         } else {
             showResult(resultElement, 
-                `✓ Payment method saved successfully! Setup Intent: ${setupIntent.id}`, 
+                `Payment method saved successfully! Setup Intent: ${setupIntent.id}`, 
                 true);
             
             // In a real app, you might:
@@ -147,7 +147,7 @@ document.getElementById('payment-form').addEventListener('submit', async (event)
             showResult(resultElement, `Payment failed: ${error.message}`, false);
         } else {
             showResult(resultElement, 
-                `✓ Payment successful! Payment Intent: ${paymentIntent.id}`, 
+                `Payment successful! Payment Intent: ${paymentIntent.id}`, 
                 true);
             
             // In a real app, you might:
@@ -213,7 +213,7 @@ if (STRIPE_PUBLISHABLE_KEY === 'pk_test_...') {
     document.body.innerHTML = `
         <div class="container">
             <div class="error-message">
-                <h2>⚠ Configuration Required</h2>
+                <h2>Configuration Required</h2>
                 <p>Please replace the STRIPE_PUBLISHABLE_KEY in stripe-integration.js with your actual Stripe publishable key.</p>
                 <p>You can find your keys at: <a href="https://dashboard.stripe.com/test/apikeys" target="_blank">Stripe Dashboard</a></p>
             </div>
