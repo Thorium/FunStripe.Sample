@@ -119,7 +119,7 @@ document.getElementById('payment-form').addEventListener('submit', async (event)
     
     try {
         const amount = parseFloat(amountInput.value);
-        if (amount < 0.50) {
+        if (isNaN(amount) || amount < 0.50) {
             throw new Error('Amount must be at least $0.50');
         }
         

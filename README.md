@@ -2,7 +2,9 @@
 
 [**FunStripe**](https://github.com/simontreanor/FunStripe) is an F# library that provides a functional wrapper around the [Stripe](https://stripe.com/) API for payment processing. This guide demonstrates the essential patterns for integrating Stripe payments in your application.
 
-This repository uses FunStripeLite NuGet-package, but usage is identical to full FunStripe, just with a few dependencies removed. This repository is not using the official Stripe.net .NET integration, as avoiding that is exactly one key aims of the alternative, FunStripe.
+This repository uses the FunStripeLite NuGet package, but usage is identical to full FunStripe, just with a few dependencies removed. This repository is not using the official Stripe.net .NET integration, as avoiding that is one of the key aims of the alternative, FunStripe.
+
+> **Note:** The F# code in `src/` and `webhooks/` uses *mock* implementations so the sample runs out of the box without real API keys — it demonstrates the structure and patterns (service layer, webhook verification, error handling) rather than making live calls. The code snippets in this README show the **real FunStripeLite API** you would use in production.
 
 ## Overview
 
@@ -16,7 +18,7 @@ This sample covers the most important use cases for a minimum viable product (MV
 
 ## Prerequisites
 
-- .NET 8.0 or later
+- .NET 10.0 or later
 - Stripe account (test keys for development)
 - FunStripeLite NuGet package
 
@@ -48,6 +50,8 @@ let config = loadStripeConfig ()
 // config.PublishableKey, config.SecretKey, config.WebhookEndpointSecret
 ```
 
+The test keys are used unless `"Environment"` is explicitly set to `"Live"` (or `"Production"`) — a missing or misspelled value falls back to the test keys.
+
 Also update the frontend publishable key in `frontend/stripe-integration.js`:
 
 ```javascript
@@ -61,7 +65,7 @@ cd src
 dotnet run
 ```
 
-This will demonstrate:
+This runs out of the box (the Stripe calls are mocked, so no real keys are needed) and demonstrates:
 - Customer creation
 - Setup intents (for saving payment methods)
 - Payment intents (for processing payments)
@@ -69,7 +73,15 @@ This will demonstrate:
 
 ### 3. Test the Frontend
 
-Open `frontend/index.html` in a browser to see:
+Serve the `frontend/` directory over HTTP (Stripe.js does not work reliably from `file://` URLs), e.g.:
+
+```bash
+cd frontend
+python -m http.server 8080
+# then open http://localhost:8080
+```
+
+The page shows:
 - Stripe Elements integration
 - Card setup forms
 - Payment processing flows
@@ -77,57 +89,53 @@ Open `frontend/index.html` in a browser to see:
 
 ## Core Patterns
 
+The general shape of a FunStripeLite request is `<module>.<Method> settings options`, where `settings` carries your API key. Options records are built with the static `New` method (optional parameters are camelCase):
+
+```fsharp
+open FunStripe
+open FunStripe.StripeRequest
+
+let settings = RestApi.StripeApiSettings.New(apiKey = config.SecretKey)
+```
+
 ### Creating Customers
 
 ```fsharp
 let createCustomer (firstName: string) (lastName: string) (email: string) =
-    async {
-        let customerRequest = {
-            CustomerCreateRequest.Default with
-                Email = Some email
-                Name = Some $"{firstName} {lastName}"
-                Description = Some "Sample customer"
-        }
-        
-        let! result = StripeRequest.Customer.create customerRequest
-        return result
-    }
+    Customers.CreateOptions.New(
+        email = email,
+        name = $"{firstName} {lastName}",
+        description = "Sample customer"
+    )
+    |> Customers.Create settings
+    // Async<Result<StripeModel.Customer, StripeError.ErrorResponse>>
 ```
 
 ### Setup Intents (for saving payment methods)
 
 ```fsharp
 let createSetupIntent (customerId: string) =
-    async {
-        let setupRequest = {
-            SetupIntentCreateRequest.Default with
-                Customer = Some customerId
-                PaymentMethodTypes = ["card"]
-                Usage = Some SetupIntentUsage.OffSession
-        }
-        
-        let! result = StripeRequest.SetupIntent.create setupRequest
-        return result
-    }
+    SetupIntents.CreateOptions.New(
+        customer = customerId,
+        paymentMethodTypes = ["card"],
+        usage = SetupIntents.Create'Usage.OffSession
+    )
+    |> SetupIntents.Create settings
 ```
 
 ### Payment Intents (for one-time payments)
 
 ```fsharp
-let createPaymentIntent (amount: int64) (currency: string) (customerId: string) =
-    async {
-        let paymentRequest = {
-            PaymentIntentCreateRequest.Default with
-                Amount = amount
-                Currency = currency
-                Customer = Some (PaymentIntentCustomer'AnyOf.String customerId)
-                PaymentMethodTypes = ["card"]
-                ConfirmationMethod = PaymentIntentConfirmationMethod.Automatic
-        }
-        
-        let! result = StripeRequest.PaymentIntent.create paymentRequest
-        return result
-    }
+// Note: the amount is an int in the smallest currency unit (e.g. cents)
+let createPaymentIntent (amount: int) (currency: string) (customerId: string) =
+    PaymentIntents.CreateOptions.New(
+        amount = amount,
+        currency = currency,
+        customer = customerId,
+        paymentMethodTypes = ["card"],
+        confirmationMethod = PaymentIntents.Create'ConfirmationMethod.Automatic
+    )
+    |> PaymentIntents.Create settings
 ```
 
 ### Frontend Integration
@@ -155,39 +163,44 @@ const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
 See the `webhooks/` directory for complete examples. Key patterns:
 
 ```fsharp
-let processWebhookEvent eventType eventData =
+let processWebhookEvent (payload: string) =
     async {
-        match eventType with
-        | PaymentIntentSucceeded ->
-            let! result = handlePaymentSuccess paymentIntent
-            return result
-        | SetupIntentSucceeded ->
-            let! result = handleSetupSuccess setupIntent
-            return result
+        let stripeEvent = Util.deserialise<StripeModel.Event> payload
+        match stripeEvent.Type with
+        | StripeModel.EventType.PaymentIntentSucceeded ->
+            let paymentIntent = Util.deserialise<StripeModel.PaymentIntent> stripeEvent.Data.Object
+            return! handlePaymentSuccess paymentIntent
+        | StripeModel.EventType.SetupIntentSucceeded ->
+            let setupIntent = Util.deserialise<StripeModel.SetupIntent> stripeEvent.Data.Object
+            return! handleSetupSuccess setupIntent
         // ... handle other events
+        | _ -> return Ignored "Event type not handled"
     }
 ```
+
+Always verify the `Stripe-Signature` header before processing the payload — see `verifyWebhookSignature` in `WebhookHandler.fs` for a complete implementation (HMAC-SHA256, timestamp tolerance, constant-time comparison, multiple `v1` entries during secret rotation).
 
 ## Architecture Patterns
 
 ### Error Handling
 
-FunStripeLite uses F# Result types for comprehensive error handling:
+FunStripeLite uses F# Result types for comprehensive error handling. The error type is `StripeError.ErrorResponse`, whose `StripeError` field holds Stripe's error object (with optional `Message`, `Code`, `DeclineCode`, etc.):
 
 ```fsharp
 let handlePaymentResult result =
     match result with
-    | Ok paymentIntent ->
+    | Ok (paymentIntent: StripeModel.PaymentIntent) ->
         // Success - process the payment intent
         printfn $"Payment created: {paymentIntent.Id}"
-    | Error stripeError ->
+    | Error (e: StripeError.ErrorResponse) ->
         // Handle the error appropriately
-        printfn $"Error: {stripeError.StripeError.Message}"
+        let message = e.StripeError.Message |> Option.defaultValue "Unknown error"
+        printfn $"Error: {message}"
 ```
 
 ### Async Operations
 
-All Stripe operations are asynchronous and return `Async<Result<'T, StripeError>>`:
+All Stripe operations are asynchronous and return `Async<Result<'T, StripeError.ErrorResponse>>`:
 
 ```fsharp
 let processPayment() =
@@ -195,7 +208,7 @@ let processPayment() =
         let! customerResult = createCustomer "John" "Doe" "john@example.com"
         match customerResult with
         | Ok customer ->
-            let! paymentResult = createPaymentIntent 2000L "usd" customer.Id
+            let! paymentResult = createPaymentIntent 2000 "usd" customer.Id
             return paymentResult
         | Error error ->
             return Error error
@@ -205,7 +218,7 @@ let processPayment() =
 ## Project Structure
 
 ```
-FunStripeLite.Sample/
+FunStripe.Sample/
 ├── README.md                 # This file
 ├── src/
 │   ├── Program.fs              # Main sample application
@@ -217,9 +230,15 @@ FunStripeLite.Sample/
 │   ├── index.html              # Sample payment form
 │   ├── stripe-integration.js   # Stripe Elements integration
 │   └── styles.css              # Basic styling
-└── webhooks/
-    ├── WebhookHandler.fs       # Webhook processing
-    └── Events.fs               # Event type definitions
+├── webhooks/
+│   ├── WebhookHandler.fs       # Webhook processing
+│   └── Events.fs               # Event type definitions
+└── tests/
+    ├── EventsTests.fs          # Event parsing and handler tests
+    ├── WebhookHandlerTests.fs  # Signature verification and processing tests
+    ├── StripeServiceTests.fs   # Service and config tests
+    ├── IntegrationExampleTests.fs # Endpoint tests
+    └── tests.fsproj
 ```
 
 ## Security Considerations
@@ -291,17 +310,26 @@ type PaymentError =
 3. **Edge cases**: Large amounts, international cards
 4. **Security**: Invalid webhooks, tampered requests
 
-### Automated Testing Example
+### Automated Testing
+
+The repository ships an xUnit test suite in `tests/` covering signature verification, event parsing, and the service/endpoint patterns:
+
+```bash
+cd tests
+dotnet test
+```
+
+Example test (xUnit):
 
 ```fsharp
-[<Test>]
+[<Fact>]
 let ``should create customer successfully`` () =
     async {
-        let! result = createCustomer "John" "Doe" "john@test.com"
+        let! result = createCustomer config "John" "Doe" "john@test.com"
         match result with
-        | Ok customer -> Assert.IsNotEmpty(customer.Id)
+        | Ok customer -> Assert.NotEmpty(customer.Id)
         | Error error -> Assert.Fail($"Unexpected error: {error}")
-    }
+    } |> Async.RunSynchronously
 ```
 
 ## Deployment Checklist
@@ -328,25 +356,23 @@ let ``should create customer successfully`` () =
 
 ```fsharp
 let createSubscription customerId priceId paymentMethodId =
-    async {
-        let subscriptionRequest = {
-            Customer = customerId
-            Items = [{ Price = priceId }]
-            DefaultPaymentMethod = paymentMethodId
-        }
-        let! result = Stripe.createSubscription subscriptionRequest
-        return result
-    }
+    Subscriptions.CreateOptions.New(
+        customer = customerId,
+        items = [Subscriptions.Create'Items.New(price = priceId)],
+        defaultPaymentMethod = paymentMethodId
+    )
+    |> Subscriptions.Create settings
 ```
 
 ### Refund Processing
 
 ```fsharp
 let processRefund paymentIntentId amount =
-    async {
-        let! result = Stripe.createRefund paymentIntentId amount
-        return result
-    }
+    Refunds.CreateOptions.New(
+        paymentIntent = paymentIntentId,
+        amount = amount
+    )
+    |> Refunds.Create settings
 ```
 
 ## Next Steps

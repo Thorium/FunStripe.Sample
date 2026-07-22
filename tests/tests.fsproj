@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Source files under test (same compile order as main project, minus Program.fs) -->
+    <Compile Include="../src/StripeService.fs" />
+    <Compile Include="../webhooks/Events.fs" />
+    <Compile Include="../webhooks/WebhookHandler.fs" />
+    <Compile Include="../src/IntegrationExample.fs" />
+    <!-- Test files -->
+    <Compile Include="EventsTests.fs" />
+    <Compile Include="WebhookHandlerTests.fs" />
+    <Compile Include="StripeServiceTests.fs" />
+    <Compile Include="IntegrationExampleTests.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../src/appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same dependencies as the main project -->
+    <PackageReference Include="FunStripeLite" Version="1.4.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
+    <!-- Test framework -->
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+</Project>

@@ -8,7 +8,6 @@ open WebhookEvents
 /// Configuration for webhook handling
 type WebhookConfig = {
     EndpointSecret: string  // Your webhook endpoint secret from Stripe
-    StripeSecretKey: string // Your Stripe secret key
 }
 
 /// Webhook processing result
@@ -27,17 +26,26 @@ type MockWebhookEvent = {
     Data: obj option
 }
 
-/// Verify webhook signature (important for security)
-let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload: string) (timestamp: int64) =
+/// Verify webhook signature (important for security).
+/// The timestamp is taken from the Stripe-Signature header itself (the `t=` part).
+let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload: string) =
     try
         // Stripe signature format: t=timestamp,v1=signature
+        // There can be multiple v1 entries while an endpoint secret is being
+        // rolled, so the header is valid if any of them matches.
         let signatureParts = signature.Split(',')
         let timestampPart = signatureParts |> Array.find (fun s -> s.StartsWith("t="))
-        let signaturePart = signatureParts |> Array.find (fun s -> s.StartsWith("v1="))
-        
+        let signatureCandidates =
+            signatureParts
+            |> Array.filter (fun s -> s.StartsWith("v1="))
+            |> Array.map (fun s -> s.Substring(3))
+
+        if Array.isEmpty signatureCandidates then
+            false
+        else
+
         let extractedTimestamp = timestampPart.Substring(2) |> int64
-        let extractedSignature = signaturePart.Substring(3)
-        
+
         // Check timestamp (prevent replay attacks)
         let currentTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         if abs(currentTimestamp - extractedTimestamp) > 300L then // 5 minutes tolerance
@@ -48,11 +56,13 @@ let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload:
             use hmac = new HMACSHA256(Encoding.UTF8.GetBytes(config.EndpointSecret))
             let computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))
             let computedSignature = BitConverter.ToString(computedHash).Replace("-", "").ToLower()
-            
+
             // Constant-time comparison to prevent timing attacks
-            let a = System.Text.Encoding.UTF8.GetBytes(computedSignature)
-            let b = System.Text.Encoding.UTF8.GetBytes(extractedSignature)
-            CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan(a), System.ReadOnlySpan(b))
+            let a = Encoding.UTF8.GetBytes(computedSignature)
+            signatureCandidates
+            |> Array.exists (fun candidate ->
+                let b = Encoding.UTF8.GetBytes(candidate)
+                CryptographicOperations.FixedTimeEquals(ReadOnlySpan(a), ReadOnlySpan(b)))
     with
     | ex ->
         printfn $"Error verifying webhook signature: {ex.Message}"
@@ -146,17 +156,16 @@ let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: s
     async {
         try
             // 1. Verify the signature first (critical for security)
-            let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            if not (verifyWebhookSignature config signature payload timestamp) then
+            if not (verifyWebhookSignature config signature payload) then
                 printfn "[WARN] Invalid webhook signature"
                 return (InvalidSignature, 400)
             else
-            
+
             // 2. Construct webhook event from parsed payload data
             let stripeEvent = {
                 Id = eventId
                 Type = eventType
-                Created = timestamp
+                Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                 Livemode = false
                 Data = None
             }
@@ -205,23 +214,26 @@ let logWebhookEvent (stripeEvent: MockWebhookEvent) =
 /// 4. Store webhook events for idempotency
 /// 5. Use database transactions for business logic
 /// 
-/// Example real webhook processing with FunStripe:
-/// 
+/// Example real webhook processing with FunStripeLite (which uses its own
+/// FSharp.Data-based JSON handling, not Newtonsoft.Json):
+///
 /// ```fsharp
+/// open FunStripe
+///
 /// let processRealWebhook (payload: string) =
 ///     async {
-///         let stripeEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<FunStripe.StripeModel.Event>(payload)
-///         
+///         // Util.deserialise handles Stripe's snake_case field names
+///         let stripeEvent = Util.deserialise<StripeModel.Event> payload
+///
 ///         match stripeEvent.Type with
-///         | "payment_intent.succeeded" ->
-///             match stripeEvent.Data with
-///             | Some eventData ->
-///                 match eventData.Object with
-///                 | FunStripe.StripeModel.EventDataObject.PaymentIntent paymentIntent ->
-///                     // Process the actual PaymentIntent object
-///                     return! handlePaymentSuccess paymentIntent
-///                 | _ -> return Error "Unexpected event data object"
-///             | None -> return Error "No event data"
+///         | StripeModel.EventType.PaymentIntentSucceeded ->
+///             // Event.Data.Object holds the raw JSON of the event's object
+///             let paymentIntent = Util.deserialise<StripeModel.PaymentIntent> stripeEvent.Data.Object
+///             return! handlePaymentSuccess paymentIntent
+///         | StripeModel.EventType.SetupIntentSucceeded ->
+///             let setupIntent = Util.deserialise<StripeModel.SetupIntent> stripeEvent.Data.Object
+///             return! handleSetupSuccess setupIntent
 ///         // ... handle other event types
+///         | _ -> return Ignored "Event type not handled"
 ///     }
 /// ```

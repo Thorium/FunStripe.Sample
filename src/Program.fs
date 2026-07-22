@@ -132,30 +132,24 @@ let main argv =
     printfn "- Setup intents (for saving payment methods)"
     printfn "- Payment intents (for processing payments)"
     printfn ""
-    printfn "IMPORTANT: Make sure to replace the API keys in appsettings.json"
-    printfn "with your actual Stripe test keys before running this sample."
+    printfn "NOTE: All Stripe calls in this sample are mocked, so it runs without"
+    printfn "real API keys. When wiring up FunStripeLite for real, configure your"
+    printfn "test keys in appsettings.json (https://dashboard.stripe.com/test/apikeys)."
     printfn ""
 
-    // Load config from appsettings.json
-    let config = loadStripeConfig ()
-    if config.SecretKey = "sk_test_..." then
-        printfn "[ERROR] Please configure your Stripe test keys in appsettings.json"
-        printfn "You can find your test keys at: https://dashboard.stripe.com/test/apikeys"
-        1
-    else
-        try
-            // Run demonstrations
-            demoCustomerAndSetup () |> Async.RunSynchronously
-            demoPaymentIntent () |> Async.RunSynchronously
-            demoCompleteFlow () |> Async.RunSynchronously
+    try
+        // Run demonstrations
+        demoCustomerAndSetup () |> Async.RunSynchronously
+        demoPaymentIntent () |> Async.RunSynchronously
+        demoCompleteFlow () |> Async.RunSynchronously
 
-            printfn "\n=== Sample completed successfully! ==="
-            printfn "Check the frontend/ directory for Stripe Elements integration examples."
-            printfn "Check the webhooks/ directory for webhook handling examples."
-            printfn "Check IntegrationExample.fs for web API integration patterns."
-            0
-        with
-        | ex ->
-            printfn $"\n[ERROR] Error running sample: {ex.Message}"
-            printfn $"Stack trace: {ex.StackTrace}"
-            1
+        printfn "\n=== Sample completed successfully! ==="
+        printfn "Check the frontend/ directory for Stripe Elements integration examples."
+        printfn "Check the webhooks/ directory for webhook handling examples."
+        printfn "Check IntegrationExample.fs for web API integration patterns."
+        0
+    with
+    | ex ->
+        printfn $"\n[ERROR] Error running sample: {ex.Message}"
+        printfn $"Stack trace: {ex.StackTrace}"
+        1

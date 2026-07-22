@@ -130,10 +130,10 @@ let demonstrateCompleteIntegration () =
 
         let config = loadStripeConfig ()
 
-        // Check configuration
+        // Note: `return ()` inside an async block does NOT exit early -- code
+        // after the `if` would still run. Use if/else to actually branch.
         if config.SecretKey = "sk_test_..." then
-            printfn "[ERROR] Please configure your Stripe keys in appsettings.json first"
-            return ()
+            printfn "[INFO] Running with placeholder keys (all calls are mocked)"
 
         printfn "1. Creating payment endpoint simulation..."
         let paymentRequest = {
