@@ -20,7 +20,7 @@ let loadStripeConfig () =
             .Build()
 
     let environment = config.["Environment"]
-    let stripe = config.GetSection("Stripe")
+    let stripe = config.GetSection "Stripe"
 
     // Live keys require an explicit opt-in; anything else (including a missing
     // or misspelled Environment value) falls back to the test keys.

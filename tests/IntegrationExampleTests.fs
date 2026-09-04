@@ -44,7 +44,7 @@ let ``createPaymentEndpoint returns success for valid request`` () =
             Assert.StartsWith("cus_mock_", data.CustomerId)
             Assert.NotEmpty(data.ClientSecret)
         | None -> Assert.Fail("Expected Data to be Some")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``createPaymentEndpoint handles single-word name`` () =
@@ -58,7 +58,7 @@ let ``createPaymentEndpoint handles single-word name`` () =
         }
         let! response = createPaymentEndpoint config request
         Assert.True(response.Success)
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``createPaymentEndpoint handles null name`` () =
@@ -72,7 +72,7 @@ let ``createPaymentEndpoint handles null name`` () =
         }
         let! response = createPaymentEndpoint config request
         Assert.True(response.Success)
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // createSetupEndpoint tests
@@ -94,7 +94,7 @@ let ``createSetupEndpoint returns success for valid request`` () =
             Assert.StartsWith("cus_mock_", data.CustomerId)
             Assert.NotEmpty(data.ClientSecret)
         | None -> Assert.Fail("Expected Data to be Some")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``createSetupEndpoint handles null name`` () =
@@ -106,4 +106,4 @@ let ``createSetupEndpoint handles null name`` () =
         }
         let! response = createSetupEndpoint config request
         Assert.True(response.Success)
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task

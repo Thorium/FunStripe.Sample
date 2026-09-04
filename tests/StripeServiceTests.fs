@@ -59,14 +59,13 @@ let ``loadStripeConfig returns placeholder values from sample config`` () =
 let ``createCustomer returns Ok with correct fields`` () =
     async {
         let config = loadStripeConfig ()
-        let! result = createCustomer config "Alice" "Smith" "alice@example.com"
-        match result with
+        match! createCustomer config "Alice" "Smith" "alice@example.com" with
         | Ok customer ->
             Assert.StartsWith("cus_mock_", customer.Id)
             Assert.Equal("alice@example.com", customer.Email)
             Assert.Equal("Alice Smith", customer.Name)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``createCustomer generates unique IDs`` () =
@@ -77,7 +76,7 @@ let ``createCustomer generates unique IDs`` () =
         match result1, result2 with
         | Ok c1, Ok c2 -> Assert.NotEqual<string>(c1.Id, c2.Id)
         | _ -> Assert.Fail("Expected both Ok")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // createSetupIntent tests
@@ -87,14 +86,13 @@ let ``createCustomer generates unique IDs`` () =
 let ``createSetupIntent returns Ok with correct fields`` () =
     async {
         let config = loadStripeConfig ()
-        let! result = createSetupIntent config "cus_test_001"
-        match result with
+        match! createSetupIntent config "cus_test_001" with
         | Ok setupIntent ->
             Assert.StartsWith("seti_mock_", setupIntent.Id)
             Assert.Contains("_secret", setupIntent.ClientSecret)
             Assert.Equal("cus_test_001", setupIntent.CustomerId)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // createPaymentIntent tests
@@ -104,8 +102,7 @@ let ``createSetupIntent returns Ok with correct fields`` () =
 let ``createPaymentIntent returns Ok with correct amount and currency`` () =
     async {
         let config = loadStripeConfig ()
-        let! result = createPaymentIntent config 5000L "usd" (Some "cus_test_002")
-        match result with
+        match! createPaymentIntent config 5000L "usd" (Some "cus_test_002") with
         | Ok paymentIntent ->
             Assert.StartsWith("pi_mock_", paymentIntent.Id)
             Assert.Contains("_secret", paymentIntent.ClientSecret)
@@ -113,16 +110,15 @@ let ``createPaymentIntent returns Ok with correct amount and currency`` () =
             Assert.Equal("usd", paymentIntent.Currency)
             Assert.Equal(Some "cus_test_002", paymentIntent.CustomerId)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``createPaymentIntent works without customer`` () =
     async {
         let config = loadStripeConfig ()
-        let! result = createPaymentIntent config 1000L "eur" None
-        match result with
+        match! createPaymentIntent config 1000L "eur" None with
         | Ok paymentIntent ->
             Assert.Equal(None, paymentIntent.CustomerId)
             Assert.Equal("eur", paymentIntent.Currency)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task

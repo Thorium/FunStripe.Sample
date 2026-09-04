@@ -60,13 +60,12 @@ let ``handlePaymentSuccess returns Success with customer`` () =
             Currency = "usd"
             CustomerId = Some "cus_test_456"
         }
-        let! result = handlePaymentSuccess paymentIntent
-        match result with
+        match! handlePaymentSuccess paymentIntent with
         | Success msg ->
             Assert.Contains("pi_test_123", msg)
             Assert.Contains("cus_test_456", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``handlePaymentSuccess returns Success without customer`` () =
@@ -77,13 +76,12 @@ let ``handlePaymentSuccess returns Success without customer`` () =
             Currency = "eur"
             CustomerId = None
         }
-        let! result = handlePaymentSuccess paymentIntent
-        match result with
+        match! handlePaymentSuccess paymentIntent with
         | Success msg ->
             Assert.Contains("pi_test_789", msg)
             Assert.Contains("no customer", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // handlePaymentFailure tests
@@ -98,11 +96,10 @@ let ``handlePaymentFailure returns Success`` () =
             Currency = "usd"
             CustomerId = Some "cus_123"
         }
-        let! result = handlePaymentFailure paymentIntent
-        match result with
+        match! handlePaymentFailure paymentIntent with
         | Success msg -> Assert.Contains("pi_fail_001", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // handleSetupSuccess tests
@@ -116,13 +113,12 @@ let ``handleSetupSuccess returns Success with customer and payment method`` () =
             CustomerId = Some "cus_test_001"
             PaymentMethodId = Some "pm_test_001"
         }
-        let! result = handleSetupSuccess setupIntent
-        match result with
+        match! handleSetupSuccess setupIntent with
         | Success msg ->
             Assert.Contains("seti_test_001", msg)
             Assert.Contains("payment method saved", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``handleSetupSuccess returns Success without payment method`` () =
@@ -132,11 +128,10 @@ let ``handleSetupSuccess returns Success without payment method`` () =
             CustomerId = Some "cus_test_002"
             PaymentMethodId = None
         }
-        let! result = handleSetupSuccess setupIntent
-        match result with
+        match! handleSetupSuccess setupIntent with
         | Success msg -> Assert.Contains("seti_test_002", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``handleSetupSuccess returns Error without customer`` () =
@@ -146,11 +141,10 @@ let ``handleSetupSuccess returns Error without customer`` () =
             CustomerId = None
             PaymentMethodId = Some "pm_test_003"
         }
-        let! result = handleSetupSuccess setupIntent
-        match result with
+        match! handleSetupSuccess setupIntent with
         | Error msg -> Assert.Contains("seti_test_003", msg)
-        | _ -> Assert.Fail("Expected Error result")
-    } |> Async.RunSynchronously
+        | Success _ | Ignored _ -> Assert.Fail("Expected Error result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // handleCustomerCreated tests
@@ -164,11 +158,10 @@ let ``handleCustomerCreated returns Success`` () =
             Email = Some "test@example.com"
             Name = Some "Test User"
         }
-        let! result = handleCustomerCreated customer
-        match result with
+        match! handleCustomerCreated customer with
         | Success msg -> Assert.Contains("cus_new_001", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``handleCustomerCreated handles missing email`` () =
@@ -178,8 +171,7 @@ let ``handleCustomerCreated handles missing email`` () =
             Email = None
             Name = None
         }
-        let! result = handleCustomerCreated customer
-        match result with
+        match! handleCustomerCreated customer with
         | Success msg -> Assert.Contains("cus_new_002", msg)
-        | _ -> Assert.Fail("Expected Success result")
-    } |> Async.RunSynchronously
+        | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task

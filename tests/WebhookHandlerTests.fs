@@ -15,7 +15,7 @@ let buildSignature (secret: string) (payload: string) (timestamp: int64) =
     let signedPayload = $"{timestamp}.{payload}"
     use hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret))
     let hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))
-    let hexSig = BitConverter.ToString(hash).Replace("-", "").ToLower()
+    let hexSig = (Convert.ToHexString hash).ToLower()
     $"t={timestamp},v1={hexSig}"
 
 let testConfig = {
@@ -97,11 +97,10 @@ let ``processWebhookEvent handles PaymentIntentSucceeded`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``processWebhookEvent handles PaymentIntentPaymentFailed`` () =
@@ -113,11 +112,10 @@ let ``processWebhookEvent handles PaymentIntentPaymentFailed`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``processWebhookEvent handles SetupIntentSucceeded`` () =
@@ -129,11 +127,10 @@ let ``processWebhookEvent handles SetupIntentSucceeded`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``processWebhookEvent handles CustomerCreated`` () =
@@ -145,11 +142,10 @@ let ``processWebhookEvent handles CustomerCreated`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``processWebhookEvent handles ChargeSucceeded`` () =
@@ -161,11 +157,10 @@ let ``processWebhookEvent handles ChargeSucceeded`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``processWebhookEvent handles InvoicePaymentSucceeded`` () =
@@ -177,11 +172,10 @@ let ``processWebhookEvent handles InvoicePaymentSucceeded`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``processWebhookEvent returns UnsupportedEvent for unknown types`` () =
@@ -193,11 +187,10 @@ let ``processWebhookEvent returns UnsupportedEvent for unknown types`` () =
             Livemode = false
             Data = None
         }
-        let! result = processWebhookEvent testConfig event
-        match result with
+        match! processWebhookEvent testConfig event with
         | UnsupportedEvent name -> Assert.Equal("unknown.event.type", name)
         | other -> Assert.Fail($"Expected UnsupportedEvent, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 // =============================================================================
 // handleWebhookRequest integration tests
@@ -212,7 +205,7 @@ let ``handleWebhookRequest returns InvalidSignature for bad signature`` () =
         match result with
         | InvalidSignature -> ()
         | other -> Assert.Fail($"Expected InvalidSignature, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``handleWebhookRequest processes valid request`` () =
@@ -225,7 +218,7 @@ let ``handleWebhookRequest processes valid request`` () =
         match result with
         | Processed _ -> ()
         | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
 
 [<Fact>]
 let ``handleWebhookRequest returns 200 for unsupported event type`` () =
@@ -238,4 +231,4 @@ let ``handleWebhookRequest returns 200 for unsupported event type`` () =
         match result with
         | UnsupportedEvent _ -> ()
         | other -> Assert.Fail($"Expected UnsupportedEvent, got {other}")
-    } |> Async.RunSynchronously
+    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task

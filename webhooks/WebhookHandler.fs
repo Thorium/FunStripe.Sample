@@ -33,12 +33,12 @@ let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload:
         // Stripe signature format: t=timestamp,v1=signature
         // There can be multiple v1 entries while an endpoint secret is being
         // rolled, so the header is valid if any of them matches.
-        let signatureParts = signature.Split(',')
-        let timestampPart = signatureParts |> Array.find (fun s -> s.StartsWith("t="))
+        let signatureParts = signature.Split ','
+        let timestampPart = signatureParts |> Array.find (fun s -> s.StartsWith "t=")
         let signatureCandidates =
             signatureParts
-            |> Array.filter (fun s -> s.StartsWith("v1="))
-            |> Array.map (fun s -> s.Substring(3))
+            |> Array.filter (fun s -> s.StartsWith "v1=")
+            |> Array.map (fun s -> s.Substring 3)
 
         if Array.isEmpty signatureCandidates then
             false
@@ -55,7 +55,7 @@ let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload:
             let signedPayload = $"{extractedTimestamp}.{payload}"
             use hmac = new HMACSHA256(Encoding.UTF8.GetBytes(config.EndpointSecret))
             let computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))
-            let computedSignature = BitConverter.ToString(computedHash).Replace("-", "").ToLower()
+            let computedSignature = (Convert.ToHexString computedHash).ToLower()
 
             // Constant-time comparison to prevent timing attacks
             let a = Encoding.UTF8.GetBytes(computedSignature)
@@ -85,8 +85,7 @@ let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) 
                     Currency = "usd"
                     CustomerId = Some "cus_mock_123"
                 }
-                let! result = handlePaymentSuccess mockPaymentIntent
-                match result with
+                match! handlePaymentSuccess mockPaymentIntent with
                 | Success msg -> return Processed msg
                 | Error msg -> return Failed msg
                 | Ignored msg -> return UnsupportedEvent msg
@@ -98,8 +97,7 @@ let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) 
                     Currency = "usd"
                     CustomerId = Some "cus_mock_123"
                 }
-                let! result = handlePaymentFailure mockPaymentIntent
-                match result with
+                match! handlePaymentFailure mockPaymentIntent with
                 | Success msg -> return Processed msg
                 | Error msg -> return Failed msg
                 | Ignored msg -> return UnsupportedEvent msg
@@ -110,8 +108,7 @@ let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) 
                     CustomerId = Some "cus_mock_123"
                     PaymentMethodId = Some "pm_mock_123"
                 }
-                let! result = handleSetupSuccess mockSetupIntent
-                match result with
+                match! handleSetupSuccess mockSetupIntent with
                 | Success msg -> return Processed msg
                 | Error msg -> return Failed msg
                 | Ignored msg -> return UnsupportedEvent msg
@@ -122,8 +119,7 @@ let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) 
                     Email = Some "customer@example.com"
                     Name = Some "Test Customer"
                 }
-                let! result = handleCustomerCreated mockCustomer
-                match result with
+                match! handleCustomerCreated mockCustomer with
                 | Success msg -> return Processed msg
                 | Error msg -> return Failed msg
                 | Ignored msg -> return UnsupportedEvent msg

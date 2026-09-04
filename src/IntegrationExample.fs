@@ -54,15 +54,13 @@ let createPaymentEndpoint (config: StripeConfig) (request: PaymentRequest) =
             let lastName = if nameParts.Length > 1 then nameParts.[1] else ""
 
             // 1. Create or get customer
-            let! customerResult = createCustomer config firstName lastName request.CustomerEmail
 
-            match customerResult with
+            match! createCustomer config firstName lastName request.CustomerEmail with
             | Ok customer ->
                 // 2. Create payment intent
                 let amount = formatAmount request.Amount
-                let! paymentResult = createPaymentIntent config amount request.Currency (Some customer.Id)
 
-                match paymentResult with
+                match! createPaymentIntent config amount request.Currency (Some customer.Id) with
                 | Ok paymentIntent ->
                     let response : ApiResponse<PaymentResponseData> =
                         createSuccessResponse {
@@ -94,14 +92,12 @@ let createSetupEndpoint (config: StripeConfig) (request: SetupRequest) =
             let lastName = if nameParts.Length > 1 then nameParts.[1] else ""
 
             // 1. Create or get customer
-            let! customerResult = createCustomer config firstName lastName request.CustomerEmail
 
-            match customerResult with
+            match! createCustomer config firstName lastName request.CustomerEmail with
             | Ok customer ->
                 // 2. Create setup intent
-                let! setupResult = createSetupIntent config customer.Id
 
-                match setupResult with
+                match! createSetupIntent config customer.Id with
                 | Ok setupIntent ->
                     let response : ApiResponse<SetupResponseData> =
                         createSuccessResponse {

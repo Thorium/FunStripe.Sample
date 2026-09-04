@@ -27,16 +27,14 @@ let demoCustomerAndSetup () =
 
         printfn $"Creating customer: {customer.FirstName} {customer.LastName} ({customer.Email})"
 
-        let! customerResult = createCustomer config customer.FirstName customer.LastName customer.Email
 
-        match customerResult with
+        match! createCustomer config customer.FirstName customer.LastName customer.Email with
         | Ok stripeCustomer ->
             printfn $"[OK] Customer created successfully: {stripeCustomer.Id}"
 
             printfn "Creating setup intent for saving payment methods..."
-            let! setupResult = createSetupIntent config stripeCustomer.Id
 
-            match setupResult with
+            match! createSetupIntent config stripeCustomer.Id with
             | Ok setupIntent ->
                 printfn $"[OK] Setup intent created: {setupIntent.Id}"
                 let previewLen = min setupIntent.ClientSecret.Length 20
@@ -64,9 +62,8 @@ let demoPaymentIntent () =
 
         printfn $"Creating payment intent for ${amount / 100L}.{amount % 100L:D2} {currency.ToUpper()}"
 
-        let! paymentResult = createPaymentIntent config amount currency None
 
-        match paymentResult with
+        match! createPaymentIntent config amount currency None with
         | Ok paymentIntent ->
             printfn $"[OK] Payment intent created: {paymentIntent.Id}"
             printfn $"Status: Processing"
@@ -91,17 +88,15 @@ let demoCompleteFlow () =
             Email = "jane.smith+demo@example.com"
         }
 
-        let! customerResult = createCustomer config customer.FirstName customer.LastName customer.Email
 
-        match customerResult with
+        match! createCustomer config customer.FirstName customer.LastName customer.Email with
         | Ok stripeCustomer ->
             printfn $"[OK] Step 1: Customer created: {stripeCustomer.Id}"
 
             // 2. Create payment intent for the customer
             let amount = formatAmount 25.50m
-            let! paymentResult = createPaymentIntent config amount "usd" (Some stripeCustomer.Id)
 
-            match paymentResult with
+            match! createPaymentIntent config amount "usd" (Some stripeCustomer.Id) with
             | Ok paymentIntent ->
                 printfn $"[OK] Step 2: Payment intent created: {paymentIntent.Id}"
                 printfn $"Amount: ${amount / 100L}.{amount % 100L:D2} USD"
