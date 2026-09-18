@@ -3,6 +3,7 @@ module IntegrationExampleTests
 open Xunit
 open IntegrationExample
 open StripeService
+open System.Threading.Tasks
 
 // =============================================================================
 // API response helper tests
@@ -44,7 +45,7 @@ let ``createPaymentEndpoint returns success for valid request`` () =
             Assert.StartsWith("cus_mock_", data.CustomerId)
             Assert.NotEmpty(data.ClientSecret)
         | None -> Assert.Fail("Expected Data to be Some")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``createPaymentEndpoint handles single-word name`` () =
@@ -58,7 +59,7 @@ let ``createPaymentEndpoint handles single-word name`` () =
         }
         let! response = createPaymentEndpoint config request
         Assert.True(response.Success)
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``createPaymentEndpoint handles null name`` () =
@@ -72,7 +73,7 @@ let ``createPaymentEndpoint handles null name`` () =
         }
         let! response = createPaymentEndpoint config request
         Assert.True(response.Success)
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // createSetupEndpoint tests
@@ -94,7 +95,7 @@ let ``createSetupEndpoint returns success for valid request`` () =
             Assert.StartsWith("cus_mock_", data.CustomerId)
             Assert.NotEmpty(data.ClientSecret)
         | None -> Assert.Fail("Expected Data to be Some")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``createSetupEndpoint handles null name`` () =
@@ -106,4 +107,4 @@ let ``createSetupEndpoint handles null name`` () =
         }
         let! response = createSetupEndpoint config request
         Assert.True(response.Success)
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task

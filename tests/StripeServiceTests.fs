@@ -2,6 +2,7 @@ module StripeServiceTests
 
 open Xunit
 open StripeService
+open System.Threading.Tasks
 
 // =============================================================================
 // formatAmount tests
@@ -65,7 +66,7 @@ let ``createCustomer returns Ok with correct fields`` () =
             Assert.Equal("alice@example.com", customer.Email)
             Assert.Equal("Alice Smith", customer.Name)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``createCustomer generates unique IDs`` () =
@@ -76,7 +77,7 @@ let ``createCustomer generates unique IDs`` () =
         match result1, result2 with
         | Ok c1, Ok c2 -> Assert.NotEqual<string>(c1.Id, c2.Id)
         | _ -> Assert.Fail("Expected both Ok")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // createSetupIntent tests
@@ -92,7 +93,7 @@ let ``createSetupIntent returns Ok with correct fields`` () =
             Assert.Contains("_secret", setupIntent.ClientSecret)
             Assert.Equal("cus_test_001", setupIntent.CustomerId)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // createPaymentIntent tests
@@ -110,7 +111,7 @@ let ``createPaymentIntent returns Ok with correct amount and currency`` () =
             Assert.Equal("usd", paymentIntent.Currency)
             Assert.Equal(Some "cus_test_002", paymentIntent.CustomerId)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``createPaymentIntent works without customer`` () =
@@ -121,4 +122,4 @@ let ``createPaymentIntent works without customer`` () =
             Assert.Equal(None, paymentIntent.CustomerId)
             Assert.Equal("eur", paymentIntent.Currency)
         | Error err -> Assert.Fail($"Expected Ok, got Error: {err}")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task

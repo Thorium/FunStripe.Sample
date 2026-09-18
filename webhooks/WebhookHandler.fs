@@ -191,7 +191,7 @@ let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: s
 
 /// Helper to log webhook events for debugging
 let logWebhookEvent (stripeEvent: MockWebhookEvent) =
-    printfn $"=== Webhook Event ==="
+    printfn "=== Webhook Event ==="
     printfn $"ID: {stripeEvent.Id}"
     printfn $"Type: {stripeEvent.Type}"
     printfn $"Created: {DateTimeOffset.FromUnixTimeSeconds(stripeEvent.Created)}"

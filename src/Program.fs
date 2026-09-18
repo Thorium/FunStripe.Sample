@@ -66,7 +66,7 @@ let demoPaymentIntent () =
         match! createPaymentIntent config amount currency None with
         | Ok paymentIntent ->
             printfn $"[OK] Payment intent created: {paymentIntent.Id}"
-            printfn $"Status: Processing"
+            printfn "Status: Processing"
             printfn $"Client secret: {paymentIntent.ClientSecret.Substring(0, 20)}..."
             printfn "Use this client secret in your frontend to process the payment"
         | Error error ->

@@ -65,7 +65,7 @@ let createSetupIntent (config: StripeConfig) (customerId: string) =
 
             let mockSetupIntent = {|
                 Id = $"seti_mock_{Guid.NewGuid().ToString().Substring(0, 8)}"
-                ClientSecret = $"seti_mock_{Guid.NewGuid().ToString()}_secret"
+                ClientSecret = $"seti_mock_{Guid.NewGuid()}_secret"
                 CustomerId = customerId
             |}
 
@@ -86,7 +86,7 @@ let createPaymentIntent (config: StripeConfig) (amount: int64) (currency: string
 
             let mockPaymentIntent = {|
                 Id = $"pi_mock_{Guid.NewGuid().ToString().Substring(0, 8)}"
-                ClientSecret = $"pi_mock_{Guid.NewGuid().ToString()}_secret"
+                ClientSecret = $"pi_mock_{Guid.NewGuid()}_secret"
                 Amount = amount
                 Currency = currency
                 CustomerId = customerId

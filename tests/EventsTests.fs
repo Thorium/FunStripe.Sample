@@ -2,6 +2,7 @@ module EventsTests
 
 open Xunit
 open WebhookEvents
+open System.Threading.Tasks
 
 // =============================================================================
 // parseEventType tests
@@ -65,7 +66,7 @@ let ``handlePaymentSuccess returns Success with customer`` () =
             Assert.Contains("pi_test_123", msg)
             Assert.Contains("cus_test_456", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``handlePaymentSuccess returns Success without customer`` () =
@@ -81,7 +82,7 @@ let ``handlePaymentSuccess returns Success without customer`` () =
             Assert.Contains("pi_test_789", msg)
             Assert.Contains("no customer", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // handlePaymentFailure tests
@@ -99,7 +100,7 @@ let ``handlePaymentFailure returns Success`` () =
         match! handlePaymentFailure paymentIntent with
         | Success msg -> Assert.Contains("pi_fail_001", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // handleSetupSuccess tests
@@ -118,7 +119,7 @@ let ``handleSetupSuccess returns Success with customer and payment method`` () =
             Assert.Contains("seti_test_001", msg)
             Assert.Contains("payment method saved", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``handleSetupSuccess returns Success without payment method`` () =
@@ -131,7 +132,7 @@ let ``handleSetupSuccess returns Success without payment method`` () =
         match! handleSetupSuccess setupIntent with
         | Success msg -> Assert.Contains("seti_test_002", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``handleSetupSuccess returns Error without customer`` () =
@@ -144,7 +145,7 @@ let ``handleSetupSuccess returns Error without customer`` () =
         match! handleSetupSuccess setupIntent with
         | Error msg -> Assert.Contains("seti_test_003", msg)
         | Success _ | Ignored _ -> Assert.Fail("Expected Error result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // handleCustomerCreated tests
@@ -161,7 +162,7 @@ let ``handleCustomerCreated returns Success`` () =
         match! handleCustomerCreated customer with
         | Success msg -> Assert.Contains("cus_new_001", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``handleCustomerCreated handles missing email`` () =
@@ -174,4 +175,4 @@ let ``handleCustomerCreated handles missing email`` () =
         match! handleCustomerCreated customer with
         | Success msg -> Assert.Contains("cus_new_002", msg)
         | Error _ | Ignored _ -> Assert.Fail("Expected Success result")
-    } |> Async.StartImmediateAsTask :> System.Threading.Tasks.Task
+    } |> Async.StartImmediateAsTask :> Task
