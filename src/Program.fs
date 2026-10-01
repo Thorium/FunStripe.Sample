@@ -1,7 +1,10 @@
-// FunStripeLite Sample Application
-// This demonstrates common payment processing patterns using FunStripeLite
+// FunStripe Sample Application
+// This demonstrates common payment processing patterns using FunStripe
 
 open System
+open FunStripe
+open FunStripe.AsyncResultCE
+open FunStripe.IsoTypes
 open StripeService
 
 /// Sample customer data for demonstration
@@ -11,12 +14,24 @@ type CustomerData = {
     Email: string
 }
 
-/// Demo function to create a customer and setup payment
-let demoCustomerAndSetup () =
-    async {
-        printfn "=== FunStripeLite Sample: Customer Creation and Setup Intent ==="
+/// The start of a client secret, enough to recognise it in the output
+let previewSecret (clientSecret: string option) =
+    match clientSecret with
+    | Some secret -> secret.Substring(0, min secret.Length 20) + "..."
+    | None -> "(none)"
 
-        let config = loadStripeConfig ()
+/// The operation ID the idempotency keys of one demo run are derived from. A fresh GUID
+/// fits here because every run is a new operation. A real application uses an ID it has
+/// stored (an order ID, say), so that a retry of the same operation sends the same keys.
+let newOperationId (demo: string) =
+    match OperationId.tryCreate $"demo-{demo}-{Guid.NewGuid()}" with
+    | Some operationId -> operationId
+    | None -> invalidArg (nameof demo) "The demo name is too long for an operation ID"
+
+/// Demo function to create a customer and setup payment
+let demoCustomerAndSetup (settings: RestApi.StripeApiSettings) =
+    async {
+        printfn "=== FunStripe Sample: Customer Creation and Setup Intent ==="
 
         // Sample customer data (safe for demo)
         let customer = {
@@ -27,18 +42,18 @@ let demoCustomerAndSetup () =
 
         printfn $"Creating customer: {customer.FirstName} {customer.LastName} ({customer.Email})"
 
+        let operationId = newOperationId "setup"
 
-        match! createCustomer config customer.FirstName customer.LastName customer.Email with
+        match! createCustomer settings (idempotencyKeyFor operationId "customer") customer.FirstName customer.LastName customer.Email with
         | Ok stripeCustomer ->
             printfn $"[OK] Customer created successfully: {stripeCustomer.Id}"
 
             printfn "Creating setup intent for saving payment methods..."
 
-            match! createSetupIntent config stripeCustomer.Id with
+            match! createSetupIntent settings (idempotencyKeyFor operationId "setup-intent") stripeCustomer.Id with
             | Ok setupIntent ->
                 printfn $"[OK] Setup intent created: {setupIntent.Id}"
-                let previewLen = min setupIntent.ClientSecret.Length 20
-                printfn $"Client secret: {setupIntent.ClientSecret.Substring(0, previewLen)}..."
+                printfn $"Client secret: {previewSecret setupIntent.ClientSecret}"
                 printfn "Use this client secret in your frontend to collect payment method"
             | Error error ->
                 printfn "[FAIL] Failed to create setup intent"
@@ -50,24 +65,23 @@ let demoCustomerAndSetup () =
     }
 
 /// Demo function to create a payment intent
-let demoPaymentIntent () =
+let demoPaymentIntent (settings: RestApi.StripeApiSettings) =
     async {
-        printfn "\n=== FunStripeLite Sample: Payment Intent Creation ==="
-
-        let config = loadStripeConfig ()
+        printfn "\n=== FunStripe Sample: Payment Intent Creation ==="
 
         // Create a payment for $20.00 USD
         let amount = formatAmount 20.00m
-        let currency = "usd"
+        let currency = IsoCurrencyCode.USD
 
-        printfn $"Creating payment intent for ${amount / 100L}.{amount % 100L:D2} {currency.ToUpper()}"
+        printfn $"Creating payment intent for ${amount / 100}.{amount % 100:D2} {currency}"
 
+        let operationId = newOperationId "payment"
 
-        match! createPaymentIntent config amount currency None with
+        match! createPaymentIntent settings (idempotencyKeyFor operationId "payment-intent") amount currency None with
         | Ok paymentIntent ->
             printfn $"[OK] Payment intent created: {paymentIntent.Id}"
-            printfn "Status: Processing"
-            printfn $"Client secret: {paymentIntent.ClientSecret.Substring(0, 20)}..."
+            printfn $"Status: {paymentIntent.Status}"
+            printfn $"Client secret: {previewSecret paymentIntent.ClientSecret}"
             printfn "Use this client secret in your frontend to process the payment"
         | Error error ->
             printfn "[FAIL] Failed to create payment intent"
@@ -75,68 +89,105 @@ let demoPaymentIntent () =
     }
 
 /// Demo function showing complete payment flow
-let demoCompleteFlow () =
+let demoCompleteFlow (settings: RestApi.StripeApiSettings) =
     async {
-        printfn "\n=== FunStripeLite Sample: Complete Payment Flow ==="
+        printfn "\n=== FunStripe Sample: Complete Payment Flow ==="
 
-        let config = loadStripeConfig ()
-
-        // 1. Create customer
         let customer = {
             FirstName = "Jane"
             LastName = "Smith"
             Email = "jane.smith+demo@example.com"
         }
 
+        let amount = formatAmount 25.50m
+        let operationId = newOperationId "complete-flow"
 
-        match! createCustomer config customer.FirstName customer.LastName customer.Email with
-        | Ok stripeCustomer ->
-            printfn $"[OK] Step 1: Customer created: {stripeCustomer.Id}"
+        // FunStripe's asyncResult chains the calls and stops at the first Stripe error
+        let flow =
+            asyncResult {
+                // 1. Create customer
+                let! stripeCustomer =
+                    createCustomer settings (idempotencyKeyFor operationId "customer") customer.FirstName customer.LastName customer.Email
+                printfn $"[OK] Step 1: Customer created: {stripeCustomer.Id}"
 
-            // 2. Create payment intent for the customer
-            let amount = formatAmount 25.50m
-
-            match! createPaymentIntent config amount "usd" (Some stripeCustomer.Id) with
-            | Ok paymentIntent ->
+                // 2. Create payment intent for the customer
+                let! paymentIntent =
+                    createPaymentIntent settings (idempotencyKeyFor operationId "payment-intent") amount IsoCurrencyCode.USD (Some stripeCustomer.Id)
                 printfn $"[OK] Step 2: Payment intent created: {paymentIntent.Id}"
-                printfn $"Amount: ${amount / 100L}.{amount % 100L:D2} USD"
+                return paymentIntent
+            }
 
-                printfn "\nNext steps for your application:"
-                printfn "1. Send client_secret to frontend"
-                printfn "2. Use Stripe Elements to collect payment details"
-                printfn "3. Confirm payment using stripe.confirmPayment()"
-                printfn "4. Handle webhooks for payment completion"
+        match! flow with
+        | Ok _ ->
+            printfn $"Amount: ${amount / 100}.{amount % 100:D2} USD"
 
-            | Error error ->
-                printfn "[FAIL] Step 2 failed: Could not create payment intent"
-                handleStripeError error
+            printfn "\nNext steps for your application:"
+            printfn "1. Send client_secret to frontend"
+            printfn "2. Use Stripe Elements to collect payment details"
+            printfn "3. Confirm payment using stripe.confirmPayment()"
+            printfn "4. Handle webhooks for payment completion"
 
         | Error error ->
-            printfn "[FAIL] Step 1 failed: Could not create customer"
+            printfn "[FAIL] Complete payment flow failed"
             handleStripeError error
+    }
+
+/// Demo function running a signed webhook delivery through the webhook handler.
+/// Needs no Stripe account: the payload is a sample and the signature is computed here.
+let demoWebhook () =
+    async {
+        printfn "\n=== FunStripe Sample: Webhook Handling ==="
+
+        // A secret for this local run only. A real endpoint uses the signing secret Stripe
+        // shows for it (WebhookEndpointSecret in appsettings.json).
+        let demoSecret = "whsec_local_demo_only"
+        let webhookConfig : WebhookHandler.WebhookConfig = { EndpointSecret = demoSecret }
+        let payload = WebhookSamples.paymentIntentSucceeded
+        let signature =
+            WebhookSamples.signatureHeader demoSecret payload (DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+
+        let! _, statusCode = WebhookHandler.handleWebhookRequest webhookConfig signature payload
+        printfn $"Webhook endpoint would answer HTTP {statusCode}"
+
+        let! _, tamperedStatusCode =
+            WebhookHandler.handleWebhookRequest webhookConfig signature (payload.Replace("2000", "1"))
+        printfn $"The same signature on a tampered payload: HTTP {tamperedStatusCode}"
     }
 
 /// Main entry point
 [<EntryPoint>]
 let main argv =
-    printfn "FunStripeLite Sample Application"
+    printfn "FunStripe Sample Application"
     printfn "======================================"
     printfn ""
-    printfn "This sample demonstrates key FunStripeLite patterns:"
+    printfn "This sample demonstrates key FunStripe patterns:"
     printfn "- Customer creation"
     printfn "- Setup intents (for saving payment methods)"
     printfn "- Payment intents (for processing payments)"
+    printfn "- Webhook signature verification and event handling"
     printfn ""
-    printfn "NOTE: All Stripe calls in this sample are mocked, so it runs without"
-    printfn "real API keys. When wiring up FunStripeLite for real, configure your"
-    printfn "test keys in appsettings.json (https://dashboard.stripe.com/test/apikeys)."
+    printfn $"FunStripe models target Stripe API version {Config.DefaultStripeApiVersion}"
     printfn ""
 
     try
-        // Run demonstrations
-        demoCustomerAndSetup () |> Async.RunSynchronously
-        demoPaymentIntent () |> Async.RunSynchronously
-        demoCompleteFlow () |> Async.RunSynchronously
+        let config = loadStripeConfig ()
+
+        match keyMode config with
+        | NotConfigured ->
+            printfn "[INFO] No Stripe test key configured, skipping the demos that call the Stripe API."
+            printfn "       Set the STRIPE_TEST_API_KEY environment variable, or TestSecretKey in"
+            printfn "       appsettings.json, to a test key from https://dashboard.stripe.com/test/apikeys"
+        | LiveMode ->
+            // The demos create customers and intents, which do not belong in a live account
+            printfn "[INFO] A live Stripe key is configured, skipping the demos that call the Stripe API."
+            printfn "       They only run with a test key."
+        | TestMode ->
+            let settings = createSettings config
+            demoCustomerAndSetup settings |> Async.RunSynchronously
+            demoPaymentIntent settings |> Async.RunSynchronously
+            demoCompleteFlow settings |> Async.RunSynchronously
+
+        demoWebhook () |> Async.RunSynchronously
 
         printfn "\n=== Sample completed successfully! ==="
         printfn "Check the frontend/ directory for Stripe Elements integration examples."

@@ -1,61 +1,39 @@
 module WebhookEvents
 
-open System
+open FunStripe
+open Stripe.PaymentMethod
 
-/// Simplified representation of Stripe events for the sample
-/// In a real implementation, you would use FunStripe.StripeModel types
-
-type MockPaymentIntent = {
-    Id: string
-    Amount: int64
-    Currency: string
-    CustomerId: string option
-}
-
-type MockSetupIntent = {
-    Id: string
-    CustomerId: string option
-    PaymentMethodId: string option
-}
-
-type MockCustomer = {
-    Id: string
-    Email: string option
-    Name: string option
-}
-
-/// Represents the different types of Stripe events we handle
-type StripeEventType =
-    | PaymentIntentSucceeded
-    | PaymentIntentPaymentFailed
-    | SetupIntentSucceeded
-    | CustomerCreated
-    | ChargeSucceeded
-    | InvoicePaymentSucceeded
-    | Other of string
+// The handlers below take the FunStripe models (PaymentIntent, SetupIntent, Customer)
+// that the webhook handler extracts from an event's `data.object`.
 
 // We leave disputes out for now, but they are important if you have a service where
 // your customers want to cancel their payments afterwards.
 
-/// Convert string to event type
-let parseEventType (eventType: string) =
-    match eventType with
-    | "payment_intent.succeeded" -> PaymentIntentSucceeded
-    | "payment_intent.payment_failed" -> PaymentIntentPaymentFailed
-    | "setup_intent.succeeded" -> SetupIntentSucceeded
-    | "customer.created" -> CustomerCreated
-    | "charge.succeeded" -> ChargeSucceeded
-    | "invoice.payment_succeeded" -> InvoicePaymentSucceeded
-    | other -> Other other
-
 /// Event processing result
 type EventProcessingResult =
     | Success of string
-    | Error of string
+    | HandlerError of string
     | Ignored of string
 
+/// The customer ID of a payment intent. `customer` is an expandable field: a bare ID
+/// unless the request asked Stripe to expand it into the full object.
+let paymentIntentCustomerId (paymentIntent: PaymentIntent) =
+    paymentIntent.Customer
+    |> Option.map (function
+        | PaymentIntentCustomer'AnyOf.String id -> id
+        | PaymentIntentCustomer'AnyOf.Customer customer -> customer.Id
+        | PaymentIntentCustomer'AnyOf.DeletedCustomer customer -> customer.Id)
+
+/// The customer ID of a setup intent (see `paymentIntentCustomerId`)
+let setupIntentCustomerId (setupIntent: SetupIntent) =
+    setupIntent.Customer
+    |> Option.map (function
+        | SetupIntentCustomer'AnyOf.String id -> id
+        | SetupIntentCustomer'AnyOf.Customer customer -> customer.Id
+        | SetupIntentCustomer'AnyOf.DeletedCustomer customer -> customer.Id)
+
 /// Business logic for handling payment completion
-let handlePaymentSuccess (paymentIntent: MockPaymentIntent) =
+let handlePaymentSuccess (paymentIntent: PaymentIntent) =
     async {
         // In a real application, you would:
         // 1. Update your database to mark the order as paid
@@ -66,7 +44,7 @@ let handlePaymentSuccess (paymentIntent: MockPaymentIntent) =
         printfn $"Processing successful payment: {paymentIntent.Id}"
         printfn $"Amount: {paymentIntent.Amount} {paymentIntent.Currency}"
 
-        match paymentIntent.CustomerId with
+        match paymentIntentCustomerId paymentIntent with
         | Some customerId ->
             printfn $"Customer: {customerId}"
             // Update customer's order history
@@ -77,12 +55,17 @@ let handlePaymentSuccess (paymentIntent: MockPaymentIntent) =
     }
 
 /// Business logic for handling payment failures
-let handlePaymentFailure (paymentIntent: MockPaymentIntent) =
+let handlePaymentFailure (paymentIntent: PaymentIntent) =
     async {
         printfn $"Processing failed payment: {paymentIntent.Id}"
 
-        // In a real application, you would handle the failure details
-        printfn "Logging failure for analysis"
+        match paymentIntent.LastPaymentError with
+        | Some error ->
+            let reason = error.Message |> Option.defaultValue "no message"
+            let declineCode = error.DeclineCode |> Option.defaultValue "n/a"
+            printfn $"Failure reason: {reason} (decline code: {declineCode})"
+        | None ->
+            printfn "No failure details on the payment intent"
         // Possibly notify customer service
         // Update order status to failed
 
@@ -90,14 +73,14 @@ let handlePaymentFailure (paymentIntent: MockPaymentIntent) =
     }
 
 /// Business logic for handling successful setup intents
-let handleSetupSuccess (setupIntent: MockSetupIntent) =
+let handleSetupSuccess (setupIntent: SetupIntent) =
     async {
         printfn $"Processing successful setup intent: {setupIntent.Id}"
 
-        match setupIntent.CustomerId with
+        match setupIntentCustomerId setupIntent with
         | Some customerId ->
-            match setupIntent.PaymentMethodId with
-            | Some paymentMethodId ->
+            match setupIntent.PaymentMethod with
+            | Some (StripeId paymentMethodId) ->
                 printfn $"Payment method {paymentMethodId} saved for customer {customerId}"
                 // Store the payment method reference in your database
                 // Enable subscription features for the customer
@@ -106,11 +89,11 @@ let handleSetupSuccess (setupIntent: MockSetupIntent) =
             | None ->
                 return Success $"Setup intent {setupIntent.Id} processed"
         | None ->
-            return Error $"Setup intent {setupIntent.Id} succeeded but no customer"
+            return HandlerError $"Setup intent {setupIntent.Id} succeeded but no customer"
     }
 
 /// Business logic for handling customer creation
-let handleCustomerCreated (customer: MockCustomer) =
+let handleCustomerCreated (customer: Customer) =
     async {
         printfn $"Processing new customer: {customer.Id}"
         let email = customer.Email |> Option.defaultValue "N/A"

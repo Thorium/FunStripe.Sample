@@ -1,8 +1,9 @@
 module WebhookHandler
 
 open System
-open System.Text
-open System.Security.Cryptography
+open FunStripe
+open Stripe.Event
+open Stripe.PaymentMethod
 open WebhookEvents
 
 /// Configuration for webhook handling
@@ -11,133 +12,80 @@ type WebhookConfig = {
 }
 
 /// Webhook processing result
-type WebhookResult = 
+type WebhookResult =
     | Processed of string
     | Failed of string
     | InvalidSignature
     | UnsupportedEvent of string
 
-/// Simplified webhook event representation for the sample
-type MockWebhookEvent = {
-    Id: string
-    Type: string
-    Created: int64
-    Livemode: bool
-    Data: obj option
-}
+/// The event type as Stripe spells it, e.g. "payment_intent.succeeded"
+let eventTypeName (eventType: EventType) =
+    match eventType with
+    | EventType.UnknownEnumValue name -> name
+    | known -> (Util.serialise known).Trim '"'
 
-/// Verify webhook signature (important for security).
-/// The timestamp is taken from the Stripe-Signature header itself (the `t=` part).
-let verifyWebhookSignature (config: WebhookConfig) (signature: string) (payload: string) =
-    try
-        // Stripe signature format: t=timestamp,v1=signature
-        // There can be multiple v1 entries while an endpoint secret is being
-        // rolled, so the header is valid if any of them matches.
-        let signatureParts = signature.Split ','
-        let timestampPart = signatureParts |> Array.find (fun s -> s.StartsWith "t=")
-        let signatureCandidates =
-            signatureParts
-            |> Array.filter (fun s -> s.StartsWith "v1=")
-            |> Array.map (fun s -> s.Substring 3)
+let private toWebhookResult result =
+    match result with
+    | Success msg -> Processed msg
+    | HandlerError msg -> Failed msg
+    | Ignored msg -> UnsupportedEvent msg
 
-        if Array.isEmpty signatureCandidates then
-            false
-        else
+/// `data.object` is rendered with the API version of the webhook endpoint, not the version
+/// of the request that caused the event. Create the endpoint with the API version of the
+/// FunStripe models (`Config.DefaultStripeApiVersion`), or the object may not deserialise.
+let private warnOnApiVersionMismatch (stripeEvent: Event) =
+    match stripeEvent.ApiVersion with
+    | Some version when version <> Config.DefaultStripeApiVersion ->
+        printfn $"[WARN] Event {stripeEvent.Id} uses API version {version}, FunStripe models target {Config.DefaultStripeApiVersion}"
+    | _ -> ()
 
-        let extractedTimestamp = timestampPart.Substring(2) |> int64
-
-        // Check timestamp (prevent replay attacks)
-        let currentTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        if abs(currentTimestamp - extractedTimestamp) > 300L then // 5 minutes tolerance
-            false
-        else
-            // Compute expected signature
-            let signedPayload = $"{extractedTimestamp}.{payload}"
-            use hmac = new HMACSHA256(Encoding.UTF8.GetBytes(config.EndpointSecret))
-            let computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))
-            let computedSignature = (Convert.ToHexString computedHash).ToLower()
-
-            // Constant-time comparison to prevent timing attacks
-            let a = Encoding.UTF8.GetBytes(computedSignature)
-            signatureCandidates
-            |> Array.exists (fun candidate ->
-                let b = Encoding.UTF8.GetBytes(candidate)
-                CryptographicOperations.FixedTimeEquals(ReadOnlySpan(a), ReadOnlySpan(b)))
-    with
-    | ex ->
-        printfn $"Error verifying webhook signature: {ex.Message}"
-        false
-
-/// Process a Stripe webhook event (simplified for sample)
-let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) =
+/// Process a Stripe webhook event
+let processWebhookEvent (stripeEvent: Event) =
     async {
         try
-            let eventType = parseEventType stripeEvent.Type
-            
-            printfn $"Processing webhook event: {stripeEvent.Type} (ID: {stripeEvent.Id})"
-            
-            match eventType with
-            | PaymentIntentSucceeded ->
-                // In a real implementation, you would extract the actual PaymentIntent from the event
-                let mockPaymentIntent = {
-                    Id = "pi_mock_123"
-                    Amount = 2000L
-                    Currency = "usd"
-                    CustomerId = Some "cus_mock_123"
-                }
-                match! handlePaymentSuccess mockPaymentIntent with
-                | Success msg -> return Processed msg
-                | Error msg -> return Failed msg
-                | Ignored msg -> return UnsupportedEvent msg
-            
-            | PaymentIntentPaymentFailed ->
-                let mockPaymentIntent = {
-                    Id = "pi_mock_failed"
-                    Amount = 2000L
-                    Currency = "usd"
-                    CustomerId = Some "cus_mock_123"
-                }
-                match! handlePaymentFailure mockPaymentIntent with
-                | Success msg -> return Processed msg
-                | Error msg -> return Failed msg
-                | Ignored msg -> return UnsupportedEvent msg
-            
-            | SetupIntentSucceeded ->
-                let mockSetupIntent = {
-                    Id = "seti_mock_123"
-                    CustomerId = Some "cus_mock_123"
-                    PaymentMethodId = Some "pm_mock_123"
-                }
-                match! handleSetupSuccess mockSetupIntent with
-                | Success msg -> return Processed msg
-                | Error msg -> return Failed msg
-                | Ignored msg -> return UnsupportedEvent msg
-            
-            | CustomerCreated ->
-                let mockCustomer = {
-                    Id = "cus_mock_new"
-                    Email = Some "customer@example.com"
-                    Name = Some "Test Customer"
-                }
-                match! handleCustomerCreated mockCustomer with
-                | Success msg -> return Processed msg
-                | Error msg -> return Failed msg
-                | Ignored msg -> return UnsupportedEvent msg
-            
-            | ChargeSucceeded ->
+            printfn $"Processing webhook event: {eventTypeName stripeEvent.Type} (ID: {stripeEvent.Id})"
+            warnOnApiVersionMismatch stripeEvent
+
+            // Event.Data.Object keeps the JSON of the event's object as Stripe sent it;
+            // Util.deserialiseRaw turns it into the model that belongs to the event type.
+            match stripeEvent.Type with
+            | EventType.PaymentIntentSucceeded ->
+                let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+                let! result = handlePaymentSuccess paymentIntent
+                return toWebhookResult result
+
+            | EventType.PaymentIntentPaymentFailed ->
+                let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+                let! result = handlePaymentFailure paymentIntent
+                return toWebhookResult result
+
+            | EventType.SetupIntentSucceeded ->
+                let setupIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<SetupIntent>
+                let! result = handleSetupSuccess setupIntent
+                return toWebhookResult result
+
+            | EventType.CustomerCreated ->
+                let customer = stripeEvent.Data.Object |> Util.deserialiseRaw<Customer>
+                let! result = handleCustomerCreated customer
+                return toWebhookResult result
+
+            | EventType.ChargeSucceeded ->
                 // For basic MVP, we might just log this and rely on payment_intent.succeeded
                 printfn $"Charge succeeded: {stripeEvent.Id}"
                 return Processed "Charge success logged"
-            
-            | InvoicePaymentSucceeded ->
+
+            | EventType.InvoicePaymentSucceeded ->
                 // Handle subscription payments if you implement subscriptions later
                 printfn $"Invoice payment succeeded: {stripeEvent.Id}"
                 return Processed "Invoice payment logged"
-            
-            | Other eventTypeName ->
+
+            | other ->
+                // Includes EventType.UnknownEnumValue: event types Stripe added after this
+                // FunStripe version was generated deserialise to it instead of failing.
+                let eventTypeName = eventTypeName other
                 printfn $"Unhandled event type: {eventTypeName}"
                 return UnsupportedEvent eventTypeName
-                
+
         with
         | ex ->
             printfn $"Error processing webhook event: {ex.Message}"
@@ -145,44 +93,60 @@ let processWebhookEvent (config: WebhookConfig) (stripeEvent: MockWebhookEvent) 
             return Failed $"Exception: {ex.Message}"
     }
 
+/// A signature only proves something when the secret is one nobody else knows. With a blank
+/// secret, or the "whsec_..." placeholder of appsettings.json, anyone could sign a payload.
+let private isSecretConfigured (secret: string) =
+    not (String.IsNullOrWhiteSpace secret || secret.EndsWith("...", StringComparison.Ordinal))
+
 /// Main webhook endpoint handler
 /// This would typically be called from your web framework (ASP.NET Core, Giraffe, etc.)
-/// In a real implementation, eventType and eventId would be parsed from the JSON payload.
-let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: string) (eventType: string) (eventId: string) =
+/// with the value of the Stripe-Signature header and the raw request body. The body must
+/// be the exact bytes Stripe sent: a re-serialised copy does not match the signature.
+let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: string) =
     async {
         try
-            // 1. Verify the signature first (critical for security)
-            if not (verifyWebhookSignature config signature payload) then
-                printfn "[WARN] Invalid webhook signature"
-                return (InvalidSignature, 400)
+            if not (isSecretConfigured config.EndpointSecret) then
+                printfn "[FAIL] Webhook endpoint secret is not configured, rejecting the delivery"
+                return Failed "Webhook endpoint secret is not configured", 500
             else
 
-            // 2. Construct webhook event from parsed payload data
-            let stripeEvent = {
-                Id = eventId
-                Type = eventType
-                Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-                Livemode = false
-                Data = None
-            }
-            
-            // 3. Process the event
-            let! result = processWebhookEvent config stripeEvent
-            
-            match result with
-            | Processed msg ->
-                printfn $"[OK] Webhook processed successfully: {msg}"
-                return result, 200
-            | Failed msg ->
-                printfn $"[FAIL] Webhook processing failed: {msg}"
-                return result, 500
-            | InvalidSignature ->
-                printfn "[FAIL] Invalid webhook signature"
-                return result, 400
-            | UnsupportedEvent unsupported ->
-                printfn $"[INFO] Unsupported event type: {unsupported}"
-                return result, 200  // Still return 200 to acknowledge receipt
-                
+            // 1. Verify the signature first (critical for security). FunStripe checks the
+            //    HMAC-SHA256 in constant time, accepts any of the v1 entries Stripe sends
+            //    while an endpoint secret is being rolled, and rejects timestamps more than
+            //    5 minutes away from now (replay protection).
+            let verification =
+                if String.IsNullOrEmpty signature then
+                    Error (WebhookSigning.InvalidHeader "Missing Stripe-Signature header")
+                else
+                    WebhookSigning.verifyWithDefaultTolerance config.EndpointSecret payload signature
+
+            match verification with
+            | Error (WebhookSigning.InvalidHeader reason)
+            | Error (WebhookSigning.TimestampOutOfTolerance reason)
+            | Error (WebhookSigning.SignatureMismatch reason) ->
+                printfn $"[WARN] Invalid webhook signature: {reason}"
+                return InvalidSignature, 400
+            | Ok () ->
+                // 2. Parse the verified payload into FunStripe's Event model
+                let stripeEvent = Util.deserialise<Event> payload
+
+                // 3. Process the event
+                let! result = processWebhookEvent stripeEvent
+
+                match result with
+                | Processed msg ->
+                    printfn $"[OK] Webhook processed successfully: {msg}"
+                    return result, 200
+                | Failed msg ->
+                    printfn $"[FAIL] Webhook processing failed: {msg}"
+                    return result, 500
+                | InvalidSignature ->
+                    printfn "[FAIL] Invalid webhook signature"
+                    return result, 400
+                | UnsupportedEvent unsupported ->
+                    printfn $"[INFO] Unsupported event type: {unsupported}"
+                    return result, 200  // Still return 200 to acknowledge receipt
+
         with
         | ex ->
             printfn $"[FAIL] Exception handling webhook: {ex.Message}"
@@ -190,46 +154,19 @@ let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: s
     }
 
 /// Helper to log webhook events for debugging
-let logWebhookEvent (stripeEvent: MockWebhookEvent) =
+let logWebhookEvent (stripeEvent: Event) =
     printfn "=== Webhook Event ==="
     printfn $"ID: {stripeEvent.Id}"
-    printfn $"Type: {stripeEvent.Type}"
-    printfn $"Created: {DateTimeOffset.FromUnixTimeSeconds(stripeEvent.Created)}"
+    printfn $"Type: {eventTypeName stripeEvent.Type}"
+    printfn $"Created: {DateTimeOffset stripeEvent.Created}"
     printfn $"Livemode: {stripeEvent.Livemode}"
     printfn "==================="
 
-/// Important Note about Real Implementation
-/// =======================================
-/// 
-/// This sample uses simplified mock implementations to demonstrate the patterns.
-/// In a real application using FunStripe, you would:
-/// 
-/// 1. Parse the actual webhook payload JSON into FunStripe.StripeModel.Event
-/// 2. Use the actual event data objects (PaymentIntent, SetupIntent, Customer, etc.)
-/// 3. Implement proper error handling and retry logic
-/// 4. Store webhook events for idempotency
-/// 5. Use database transactions for business logic
-/// 
-/// Example real webhook processing with FunStripeLite (which uses its own
-/// FSharp.Data-based JSON handling, not Newtonsoft.Json):
+/// Before taking this to production:
 ///
-/// ```fsharp
-/// open FunStripe
-///
-/// let processRealWebhook (payload: string) =
-///     async {
-///         // Util.deserialise handles Stripe's snake_case field names
-///         let stripeEvent = Util.deserialise<StripeModel.Event> payload
-///
-///         match stripeEvent.Type with
-///         | StripeModel.EventType.PaymentIntentSucceeded ->
-///             // Event.Data.Object holds the raw JSON of the event's object
-///             let paymentIntent = Util.deserialise<StripeModel.PaymentIntent> stripeEvent.Data.Object
-///             return! handlePaymentSuccess paymentIntent
-///         | StripeModel.EventType.SetupIntentSucceeded ->
-///             let setupIntent = Util.deserialise<StripeModel.SetupIntent> stripeEvent.Data.Object
-///             return! handleSetupSuccess setupIntent
-///         // ... handle other event types
-///         | _ -> return Ignored "Event type not handled"
-///     }
-/// ```
+/// 1. Store the IDs of processed events and skip the ones already seen (Stripe retries
+///    and can deliver an event more than once)
+/// 2. Return quickly and do slow work on a queue; Stripe times a delivery out
+/// 3. Use database transactions for business logic
+/// 4. During development, forward events to your machine with the Stripe CLI:
+///    `stripe listen --forward-to localhost:5000/webhooks/stripe`

@@ -1,10 +1,10 @@
-# FunStripe / FunStripeLite Integration Guide
+# FunStripe Integration Guide
 
 [**FunStripe**](https://github.com/simontreanor/FunStripe) is an F# library that provides a functional wrapper around the [Stripe](https://stripe.com/) API for payment processing. This guide demonstrates the essential patterns for integrating Stripe payments in your application.
 
-This repository uses the FunStripeLite NuGet package, but usage is identical to full FunStripe, just with a few dependencies removed. This repository is not using the official Stripe.net .NET integration, as avoiding that is one of the key aims of the alternative, FunStripe.
+This repository uses the [FunStripe.Core](https://www.nuget.org/packages/FunStripe.Core/) NuGet package, version 3.0, which targets Stripe API version `2026-09-30.endive`. Since FunStripe 2.0 this is the only package: the code generators stay in the FunStripe repository, so `FunStripe.Core` is what `FunStripeLite` used to be (the library without the generators and their dependencies). This repository is not using the official Stripe.net .NET integration, as avoiding that is one of the key aims of the alternative, FunStripe.
 
-> **Note:** The F# code in `src/` and `webhooks/` uses *mock* implementations so the sample runs out of the box without real API keys — it demonstrates the structure and patterns (service layer, webhook verification, error handling) rather than making live calls. The code snippets in this README show the **real FunStripeLite API** you would use in production.
+> **Note:** The F# code in `src/` and `webhooks/` calls FunStripe for real. With a Stripe test key configured, `dotnet run` creates customers, setup intents and payment intents in your Stripe test account. Without one it skips those calls and still runs the webhook demo, which needs no Stripe account.
 
 ## Overview
 
@@ -20,13 +20,19 @@ This sample covers the most important use cases for a minimum viable product (MV
 
 - .NET 10.0 or later
 - Stripe account (test keys for development)
-- FunStripeLite NuGet package
+- FunStripe.Core NuGet package
 
 ## Quick Start
 
 ### 1. Configuration
 
-Configure your Stripe keys in `src/appsettings.json`:
+Set your Stripe test secret key in the `STRIPE_TEST_API_KEY` environment variable (the same variable FunStripe itself reads), so the key never has to be written to a file:
+
+```bash
+export STRIPE_TEST_API_KEY=sk_test_your_key_here
+```
+
+Or configure the keys in `src/appsettings.json`:
 
 ```json
 {
@@ -44,13 +50,14 @@ Configure your Stripe keys in `src/appsettings.json`:
 The configuration is loaded via `Microsoft.Extensions.Configuration` in `StripeService.fs`:
 
 ```fsharp
-open Microsoft.Extensions.Configuration
-
 let config = loadStripeConfig ()
 // config.PublishableKey, config.SecretKey, config.WebhookEndpointSecret
+
+let settings = createSettings config
+// FunStripe's RestApi.StripeApiSettings, passed to every Stripe call
 ```
 
-The test keys are used unless `"Environment"` is explicitly set to `"Live"` (or `"Production"`) — a missing or misspelled value falls back to the test keys.
+The test keys are used unless `"Environment"` is explicitly set to `"Live"` (or `"Production"`) — a missing or misspelled value falls back to the test keys. In the test environment `STRIPE_TEST_API_KEY` wins over `TestSecretKey`.
 
 Also update the frontend publishable key in `frontend/stripe-integration.js`:
 
@@ -65,11 +72,13 @@ cd src
 dotnet run
 ```
 
-This runs out of the box (the Stripe calls are mocked, so no real keys are needed) and demonstrates:
+With a test key configured this demonstrates, against your Stripe test account:
 - Customer creation
 - Setup intents (for saving payment methods)
 - Payment intents (for processing payments)
 - Complete payment flows
+
+It always demonstrates webhook handling: a sample `payment_intent.succeeded` delivery is signed locally and run through the webhook handler, followed by a tampered copy that the signature check rejects.
 
 ### 3. Test the Frontend
 
@@ -89,14 +98,24 @@ The page shows:
 
 ## Core Patterns
 
-The general shape of a FunStripeLite request is `<module>.<Method> settings options`, where `settings` carries your API key. Options records are built with the static `New` method (optional parameters are camelCase):
+FunStripe types are organised into per-domain namespaces: response models live under `Stripe.{Domain}` and request options under `StripeRequest.{Domain}`. The general shape of a request is `<module>.<Method> settings options`, where `settings` carries your API key. Options records are built with the static `New` method (optional parameters are camelCase):
 
 ```fsharp
 open FunStripe
-open FunStripe.StripeRequest
+open FunStripe.IsoTypes          // IsoCurrencyCode
+open Stripe.PaymentMethod        // Customer, SetupIntent, PaymentIntent, ...
+open StripeRequest.Customers     // Customers
+open StripeRequest.Setup         // SetupIntents
+open StripeRequest.Payment       // PaymentIntents
 
-let settings = RestApi.StripeApiSettings.New(apiKey = config.SecretKey)
+let settings =
+    RestApi.StripeApiSettings.New(
+        apiKey = config.SecretKey,
+        stripeVersion = Config.DefaultStripeApiVersion
+    )
 ```
+
+`stripeVersion` sends the `Stripe-Version` header. Without it Stripe uses the default API version of your account, which can differ from the version the FunStripe models were generated from (`Config.DefaultStripeApiVersion`, here `2026-09-30.endive`). Pinning it keeps the responses in line with the types.
 
 ### Creating Customers
 
@@ -108,7 +127,7 @@ let createCustomer (firstName: string) (lastName: string) (email: string) =
         description = "Sample customer"
     )
     |> Customers.Create settings
-    // Async<Result<StripeModel.Customer, StripeError.ErrorResponse>>
+    // Async<Result<Customer, StripeError.ErrorResponse>>
 ```
 
 ### Setup Intents (for saving payment methods)
@@ -117,7 +136,7 @@ let createCustomer (firstName: string) (lastName: string) (email: string) =
 let createSetupIntent (customerId: string) =
     SetupIntents.CreateOptions.New(
         customer = customerId,
-        paymentMethodTypes = ["card"],
+        allowedPaymentMethodTypes = [SetupIntents.Create'AllowedPaymentMethodTypes.Card],
         usage = SetupIntents.Create'Usage.OffSession
     )
     |> SetupIntents.Create settings
@@ -127,16 +146,19 @@ let createSetupIntent (customerId: string) =
 
 ```fsharp
 // Note: the amount is an int in the smallest currency unit (e.g. cents)
-let createPaymentIntent (amount: int) (currency: string) (customerId: string) =
+let createPaymentIntent (amount: int) (currency: IsoCurrencyCode) (customerId: string) =
     PaymentIntents.CreateOptions.New(
         amount = amount,
         currency = currency,
         customer = customerId,
-        paymentMethodTypes = ["card"],
-        confirmationMethod = PaymentIntents.Create'ConfirmationMethod.Automatic
+        allowedPaymentMethodTypes = [PaymentIntents.Create'AllowedPaymentMethodTypes.Card]
     )
     |> PaymentIntents.Create settings
+
+// createPaymentIntent 2000 IsoCurrencyCode.USD "cus_..."
 ```
+
+Stripe removed the `payment_method_types` request parameter in the `2026-09-30.endive` API, so FunStripe 3.0 no longer has `paymentMethodTypes` on these requests. Its replacement, `allowedPaymentMethodTypes`, is a typed list that filters the payment methods Stripe computes dynamically for the payment: a type you list is offered only if it is also eligible. Leave it out to offer everything enabled in your Dashboard.
 
 ### Frontend Integration
 
@@ -160,36 +182,49 @@ const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
 
 ### Webhook Handling
 
-See the `webhooks/` directory for complete examples. Key patterns:
+See the `webhooks/` directory for complete examples. Verify the `Stripe-Signature` header against the raw request body first, then parse the payload into FunStripe's `Event`:
 
 ```fsharp
-let processWebhookEvent (payload: string) =
+open FunStripe
+open Stripe.Event
+open Stripe.PaymentMethod
+
+let handleWebhook (endpointSecret: string) (signatureHeader: string) (rawBody: string) =
     async {
-        let stripeEvent = Util.deserialise<StripeModel.Event> payload
-        match stripeEvent.Type with
-        | StripeModel.EventType.PaymentIntentSucceeded ->
-            let paymentIntent = Util.deserialise<StripeModel.PaymentIntent> stripeEvent.Data.Object
-            return! handlePaymentSuccess paymentIntent
-        | StripeModel.EventType.SetupIntentSucceeded ->
-            let setupIntent = Util.deserialise<StripeModel.SetupIntent> stripeEvent.Data.Object
-            return! handleSetupSuccess setupIntent
-        // ... handle other events
-        | _ -> return Ignored "Event type not handled"
+        match WebhookSigning.verifyWithDefaultTolerance endpointSecret rawBody signatureHeader with
+        | Error reason -> return Error $"Invalid signature: {reason}"
+        | Ok () ->
+            let stripeEvent = Util.deserialise<Event> rawBody
+            match stripeEvent.Type with
+            | EventType.PaymentIntentSucceeded ->
+                let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+                let! result = handlePaymentSuccess paymentIntent
+                return Ok result
+            | EventType.SetupIntentSucceeded ->
+                let setupIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<SetupIntent>
+                let! result = handleSetupSuccess setupIntent
+                return Ok result
+            // ... handle other events
+            | _ -> return Ok (Ignored "Event type not handled")
     }
 ```
 
-Always verify the `Stripe-Signature` header before processing the payload — see `verifyWebhookSignature` in `WebhookHandler.fs` for a complete implementation (HMAC-SHA256, timestamp tolerance, constant-time comparison, multiple `v1` entries during secret rotation).
+- `WebhookSigning` checks the HMAC-SHA256 in constant time, enforces the timestamp tolerance (5 minutes by default) and accepts any of the `v1` entries Stripe sends while an endpoint secret is being rolled. Pass it the body exactly as received; a re-serialised copy does not match the signature.
+- `Event.Data.Object` is a `RawJson` value holding the event's object as Stripe sent it. `Util.deserialiseRaw` turns it into the model that belongs to the event type.
+- Event types Stripe adds after this FunStripe version was generated deserialise to `EventType.UnknownEnumValue "the.event.type"`, so a match on `EventType` needs a wildcard (or that case).
+- Stripe renders `data.object` with the API version of the *webhook endpoint*. Create the endpoint with the version the FunStripe models target (`Config.DefaultStripeApiVersion`), otherwise an object may not deserialise.
+- Expandable fields are typed. `paymentIntent.Customer` is a `PaymentIntentCustomer'AnyOf` (a bare ID, or the full customer when expanded), and references such as `setupIntent.PaymentMethod` are a `StripeId<Markers.PaymentMethod>`; match `StripeId id` to get the string. See `Events.fs`.
 
 ## Architecture Patterns
 
 ### Error Handling
 
-FunStripeLite uses F# Result types for comprehensive error handling. The error type is `StripeError.ErrorResponse`, whose `StripeError` field holds Stripe's error object (with optional `Message`, `Code`, `DeclineCode`, etc.):
+FunStripe uses F# Result types for comprehensive error handling. The error type is `StripeError.ErrorResponse`, whose `StripeError` field holds Stripe's error object (with optional `Message`, `Code`, `DeclineCode`, etc.):
 
 ```fsharp
 let handlePaymentResult result =
     match result with
-    | Ok (paymentIntent: StripeModel.PaymentIntent) ->
+    | Ok (paymentIntent: PaymentIntent) ->
         // Success - process the payment intent
         printfn $"Payment created: {paymentIntent.Id}"
     | Error (e: StripeError.ErrorResponse) ->
@@ -200,20 +235,45 @@ let handlePaymentResult result =
 
 ### Async Operations
 
-All Stripe operations are asynchronous and return `Async<Result<'T, StripeError.ErrorResponse>>`:
+All Stripe operations are asynchronous and return `Async<Result<'T, StripeError.ErrorResponse>>`. FunStripe's `asyncResult` computation expression chains them and stops at the first error:
 
 ```fsharp
-let processPayment() =
-    async {
-        let! customerResult = createCustomer "John" "Doe" "john@example.com"
-        match customerResult with
-        | Ok customer ->
-            let! paymentResult = createPaymentIntent 2000 "usd" customer.Id
-            return paymentResult
-        | Error error ->
-            return Error error
+open FunStripe.AsyncResultCE
+
+let processPayment () =
+    asyncResult {
+        let! customer = createCustomer "John" "Doe" "john@example.com"
+        let! paymentIntent = createPaymentIntent 2000 IsoCurrencyCode.USD customer.Id
+        return paymentIntent
     }
 ```
+
+### Idempotency
+
+Pass an idempotency key with a mutating request so that a retry cannot run it twice. Stripe keeps the response to the first request with a key for 24 hours and answers a repeat with it:
+
+```fsharp
+let createCustomerOnce (idempotencyKey: string) (email: string) =
+    Customers.CreateOptions.New(email = email)
+    |> Customers.Create (settings.WithIdempotencyKey idempotencyKey)
+```
+
+The sample passes a key with every create call. `StripeService.fs` has two small types for it, so that a key cannot be blank or be mixed up with the other strings a call takes:
+
+```fsharp
+// OperationId: one operation of your application. None when blank or too long.
+match OperationId.tryCreate request.IdempotencyKey with
+| None -> // reject the request
+| Some operationId ->
+    // IdempotencyKey: one Stripe call of that operation
+    createCustomer settings (idempotencyKeyFor operationId "customer") firstName lastName email
+    // ...
+    createPaymentIntent settings (idempotencyKeyFor operationId "payment-intent") amount currency (Some customerId)
+```
+
+- The operation ID must be the same for every retry and different for any other operation. Take it from something your application stores: an order ID, or the `Idempotency-Key` header your own client sent. The endpoints in `IntegrationExample.fs` read it from the request (`IdempotencyKey`) and reject a request without one. `Program.fs` uses a fresh GUID only because every demo run is a new operation.
+- Stripe ties a key to the endpoint and parameters of its first use, hence one key per step of an operation.
+- A retried `createPaymentEndpoint` request gets the same customer and payment intent back. A returning user is a different operation, though: to avoid a second Stripe customer for the same person, store the customer ID with your user and look it up before creating one.
 
 ## Project Structure
 
@@ -225,19 +285,22 @@ FunStripe.Sample/
 │   ├── StripeService.fs        # Core Stripe operations
 │   ├── IntegrationExample.fs   # Web API integration patterns
 │   ├── appsettings.json        # Configuration (Stripe keys)
-│   └── FunStripeLite.Sample.fsproj
+│   └── FunStripe.Sample.fsproj
 ├── frontend/
 │   ├── index.html              # Sample payment form
 │   ├── stripe-integration.js   # Stripe Elements integration
 │   └── styles.css              # Basic styling
 ├── webhooks/
-│   ├── WebhookHandler.fs       # Webhook processing
-│   └── Events.fs               # Event type definitions
+│   ├── WebhookHandler.fs       # Signature verification and event dispatch
+│   ├── Events.fs               # Business logic per event
+│   └── WebhookSamples.fs       # Sample payloads and signatures for local runs
 └── tests/
-    ├── EventsTests.fs          # Event parsing and handler tests
+    ├── FakeStripeServer.fs     # Local stand-in for api.stripe.com
+    ├── EventsTests.fs          # Event handler tests
     ├── WebhookHandlerTests.fs  # Signature verification and processing tests
-    ├── StripeServiceTests.fs   # Service and config tests
+    ├── StripeServiceTests.fs   # Service, request encoding and config tests
     ├── IntegrationExampleTests.fs # Endpoint tests
+    ├── LiveTests.fs            # Calls Stripe test mode (needs STRIPE_TEST_API_KEY)
     └── tests.fsproj
 ```
 
@@ -251,6 +314,7 @@ FunStripe.Sample/
 
 ### Webhook Security
 - Always verify webhook signatures (see `WebhookHandler.fs`)
+- Keep the endpoint secret configured and private: the handler rejects every delivery while it is blank or still the `whsec_...` placeholder, because anyone could sign a payload with a known secret
 - Use HTTPS endpoints only
 - Implement idempotency to handle duplicate events
 - Store and replay events if processing fails
@@ -271,7 +335,7 @@ FunStripe.Sample/
    - `POST /webhooks/stripe` -- Handle Stripe webhooks
 
 2. **Service Layer**:
-   - `StripeService` -- Wraps FunStripeLite operations
+   - `StripeService` -- Wraps FunStripe operations
    - `PaymentService` -- Business logic for payments
    - `CustomerService` -- Customer management
    - `WebhookService` -- Event processing
@@ -288,7 +352,7 @@ Define your own error types alongside Stripe's:
 
 ```fsharp
 type PaymentError =
-    | StripeApiError of StripeError
+    | StripeApiError of StripeError.ErrorResponse
     | InsufficientFunds
     | InvalidCustomer
     | OrderNotFound
@@ -312,25 +376,32 @@ type PaymentError =
 
 ### Automated Testing
 
-The repository ships an xUnit test suite in `tests/` covering signature verification, event parsing, and the service/endpoint patterns:
+The repository ships an xUnit test suite in `tests/` covering signature verification, event handling, and the service/endpoint patterns:
 
 ```bash
 cd tests
 dotnet test
 ```
 
-Example test (xUnit):
+The tests need no Stripe account. `StripeApiSettings` takes a base URL, so the service code runs unchanged against a local fake server (`FakeStripeServer.fs`) that records the requests and answers with Stripe-shaped JSON. That exercises FunStripe's real request encoding and response deserialisation:
 
 ```fsharp
 [<Fact>]
-let ``should create customer successfully`` () =
+let ``createCustomer posts name and email and returns the customer`` () =
     async {
-        let! result = createCustomer config "John" "Doe" "john@test.com"
-        match result with
-        | Ok customer -> Assert.NotEmpty(customer.Id)
-        | Error error -> Assert.Fail($"Unexpected error: {error}")
-    } |> Async.RunSynchronously
+        use stripe = new FakeStripe(respondOk)
+        // `key` is a test helper: the idempotency key of a step of the operation "op-1"
+        match! createCustomer stripe.Settings (key "customer") "Alice" "Smith" "alice@example.com" with
+        | Ok customer -> Assert.Equal("cus_FakeCustomer", customer.Id)
+        | Error err -> Assert.Fail($"Expected Ok, got Error: {describeStripeError err}")
+
+        let request = Assert.Single stripe.Requests
+        Assert.Equal("/v1/customers", request.Path)
+        Assert.Equal("Alice Smith", request.Form.["name"])
+    } |> Async.StartImmediateAsTask :> Task
 ```
+
+`LiveTests.fs` runs the same service functions against Stripe's test mode. It is skipped unless `STRIPE_TEST_API_KEY` is set.
 
 ## Deployment Checklist
 
@@ -355,6 +426,8 @@ let ``should create customer successfully`` () =
 ### Subscription Billing
 
 ```fsharp
+open StripeRequest.Subscriptions
+
 let createSubscription customerId priceId paymentMethodId =
     Subscriptions.CreateOptions.New(
         customer = customerId,
@@ -367,6 +440,8 @@ let createSubscription customerId priceId paymentMethodId =
 ### Refund Processing
 
 ```fsharp
+open StripeRequest.Refunds
+
 let processRefund paymentIntentId amount =
     Refunds.CreateOptions.New(
         paymentIntent = paymentIntentId,
@@ -374,6 +449,17 @@ let processRefund paymentIntentId amount =
     )
     |> Refunds.Create settings
 ```
+
+## Upgrading from FunStripeLite 1.x
+
+- Reference `FunStripe.Core` instead of `FunStripeLite` (or `FunStripe`).
+- Replace `open FunStripe.StripeRequest` and `StripeModel.X` with the per-domain namespaces: `StripeRequest.{Domain}` for requests, `Stripe.{Domain}` for models.
+- Replace `paymentMethodTypes = ["card"]` with `allowedPaymentMethodTypes = [...Create'AllowedPaymentMethodTypes.Card]` on PaymentIntent, SetupIntent and Checkout Session requests.
+- Currencies are `IsoTypes.IsoCurrencyCode` values instead of strings (`parseCurrency` in `StripeService.fs` converts user input).
+- Webhooks: `Event.Data.Object` is `RawJson` (use `Util.deserialiseRaw`), `EventType` has an `UnknownEnumValue` case, and `WebhookSigning` replaces hand-written signature checks.
+- Many ID fields are `StripeId<_>` or `...'AnyOf` unions instead of strings.
+
+See FunStripe's [CHANGELOG](https://github.com/simontreanor/FunStripe/blob/main/CHANGELOG.md) and [v1 to v2 migration guide](https://github.com/simontreanor/FunStripe/blob/main/MIGRATION-v1-to-v2.md) for the full list.
 
 ## Next Steps
 
@@ -387,7 +473,8 @@ For production applications, consider implementing:
 ## Resources
 
 - [Stripe API Documentation](https://stripe.com/docs/api)
-- [FunStripeLite on NuGet](https://www.nuget.org/packages/FunStripeLite/)
+- [FunStripe.Core on NuGet](https://www.nuget.org/packages/FunStripe.Core/)
+- [FunStripe on GitHub](https://github.com/simontreanor/FunStripe)
 - [Stripe Elements Documentation](https://stripe.com/docs/stripe-js)
 - [Webhook Best Practices](https://stripe.com/docs/webhooks/best-practices)
 - [Stripe Test Cards](https://docs.stripe.com/testing)

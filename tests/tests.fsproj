@@ -12,12 +12,15 @@
     <Compile Include="../src/StripeService.fs" />
     <Compile Include="../webhooks/Events.fs" />
     <Compile Include="../webhooks/WebhookHandler.fs" />
+    <Compile Include="../webhooks/WebhookSamples.fs" />
     <Compile Include="../src/IntegrationExample.fs" />
     <!-- Test files -->
+    <Compile Include="FakeStripeServer.fs" />
     <Compile Include="EventsTests.fs" />
     <Compile Include="WebhookHandlerTests.fs" />
     <Compile Include="StripeServiceTests.fs" />
     <Compile Include="IntegrationExampleTests.fs" />
+    <Compile Include="LiveTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -27,7 +30,7 @@
 
   <ItemGroup>
     <!-- Same dependencies as the main project -->
-    <PackageReference Include="FunStripeLite" Version="1.4.3" />
+    <PackageReference Include="FunStripe.Core" Version="3.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
     <!-- Test framework -->

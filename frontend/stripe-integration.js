@@ -1,5 +1,5 @@
-// FunStripeLite Frontend Integration Sample
-// This demonstrates how to integrate Stripe Elements with FunStripeLite backend
+// FunStripe Frontend Integration Sample
+// This demonstrates how to integrate Stripe Elements with FunStripe backend
 
 // Configuration - replace with your actual publishable key
 const STRIPE_PUBLISHABLE_KEY = 'pk_test_...'; // Replace with your test publishable key

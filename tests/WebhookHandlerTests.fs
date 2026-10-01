@@ -1,88 +1,122 @@
 module WebhookHandlerTests
 
 open System
-open System.Text
-open System.Security.Cryptography
 open System.Threading.Tasks
 open Xunit
+open FunStripe
+open Stripe.Event
 open WebhookHandler
-open WebhookEvents
-
-// =============================================================================
-// Helper to build valid Stripe-style webhook signatures
-// =============================================================================
-
-let buildSignature (secret: string) (payload: string) (timestamp: int64) =
-    let signedPayload = $"{timestamp}.{payload}"
-    use hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret))
-    let hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))
-    let hexSig = (Convert.ToHexString hash).ToLower()
-    $"t={timestamp},v1={hexSig}"
+open WebhookSamples
 
 let testConfig = {
     EndpointSecret = "whsec_test_secret_123"
 }
 
+let now () = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+
+/// An event as FunStripe deserialises it from a webhook payload
+let eventOf (eventType: string) (objectJson: string) : Event =
+    eventPayload "evt_test_001" eventType objectJson |> Util.deserialise
+
+let failedPaymentIntentObject =
+    paymentIntentObject
+        .Replace("\"status\": \"succeeded\"", "\"status\": \"requires_payment_method\"")
+        .Replace(
+            "\"last_payment_error\": null",
+            "\"last_payment_error\": { \"code\": \"card_declined\", \"decline_code\": \"insufficient_funds\", \"message\": \"Your card has insufficient funds.\", \"type\": \"card_error\" }")
+
 // =============================================================================
-// verifyWebhookSignature tests
+// Signature verification tests (handleWebhookRequest with FunStripe.WebhookSigning)
 // =============================================================================
 
 [<Fact>]
-let ``verifyWebhookSignature accepts valid signature`` () =
-    let payload = """{"id":"evt_1","type":"payment_intent.succeeded"}"""
-    let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-    let signature = buildSignature testConfig.EndpointSecret payload timestamp
-    let result = verifyWebhookSignature testConfig signature payload
-    Assert.True(result, "Valid signature should be accepted")
+let ``handleWebhookRequest processes valid request`` () =
+    async {
+        let payload = paymentIntentSucceeded
+        let signature = signatureHeader testConfig.EndpointSecret payload (now ())
+        let! (result, statusCode) = handleWebhookRequest testConfig signature payload
+        Assert.Equal(200, statusCode)
+        match result with
+        | Processed msg -> Assert.Contains("pi_3SampleSucceeded", msg)
+        | other -> Assert.Fail($"Expected Processed, got {other}")
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
-let ``verifyWebhookSignature accepts second v1 signature during secret rotation`` () =
-    let payload = """{"id":"evt_1","type":"payment_intent.succeeded"}"""
-    let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-    // During endpoint-secret rotation Stripe includes one v1 entry per active secret
-    let oldSecretSig = (buildSignature "whsec_old_secret" payload timestamp).Split(',').[1]
-    let validSignature = buildSignature testConfig.EndpointSecret payload timestamp
-    let rotationHeader = $"{validSignature.Split(',').[0]},{oldSecretSig},{validSignature.Split(',').[1]}"
-    let result = verifyWebhookSignature testConfig rotationHeader payload
-    Assert.True(result, "Any matching v1 signature should be accepted")
+let ``handleWebhookRequest accepts second v1 signature during secret rotation`` () =
+    async {
+        let payload = paymentIntentSucceeded
+        let timestamp = now ()
+        // During endpoint-secret rotation Stripe includes one v1 entry per active secret
+        let oldSecretSig = (signatureHeader "whsec_old_secret" payload timestamp).Split(',').[1]
+        let validSignature = signatureHeader testConfig.EndpointSecret payload timestamp
+        let rotationHeader = $"{validSignature.Split(',').[0]},{oldSecretSig},{validSignature.Split(',').[1]}"
+        let! (result, statusCode) = handleWebhookRequest testConfig rotationHeader payload
+        Assert.Equal(200, statusCode)
+        match result with
+        | Processed _ -> ()
+        | other -> Assert.Fail($"Expected Processed, got {other}")
+    } |> Async.StartImmediateAsTask :> Task
+
+let assertInvalidSignature (signature: string) (payload: string) =
+    async {
+        let! (result, statusCode) = handleWebhookRequest testConfig signature payload
+        Assert.Equal(400, statusCode)
+        match result with
+        | InvalidSignature -> ()
+        | other -> Assert.Fail($"Expected InvalidSignature, got {other}")
+    } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
-let ``verifyWebhookSignature rejects tampered payload`` () =
-    let payload = """{"id":"evt_1","type":"payment_intent.succeeded"}"""
-    let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-    let signature = buildSignature testConfig.EndpointSecret payload timestamp
-    let tamperedPayload = """{"id":"evt_1","type":"payment_intent.succeeded","amount":99999}"""
-    let result = verifyWebhookSignature testConfig signature tamperedPayload
-    Assert.False(result, "Tampered payload should be rejected")
+let ``handleWebhookRequest rejects tampered payload`` () =
+    let signature = signatureHeader testConfig.EndpointSecret paymentIntentSucceeded (now ())
+    let tamperedPayload = paymentIntentSucceeded.Replace("\"amount\": 2000", "\"amount\": 99999")
+    assertInvalidSignature signature tamperedPayload
 
 [<Fact>]
-let ``verifyWebhookSignature rejects wrong secret`` () =
-    let payload = """{"id":"evt_1","type":"payment_intent.succeeded"}"""
-    let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-    let signature = buildSignature "whsec_wrong_secret" payload timestamp
-    let result = verifyWebhookSignature testConfig signature payload
-    Assert.False(result, "Wrong secret should be rejected")
+let ``handleWebhookRequest rejects wrong secret`` () =
+    let signature = signatureHeader "whsec_wrong_secret" paymentIntentSucceeded (now ())
+    assertInvalidSignature signature paymentIntentSucceeded
 
 [<Fact>]
-let ``verifyWebhookSignature rejects expired timestamp`` () =
-    let payload = """{"id":"evt_1","type":"payment_intent.succeeded"}"""
+let ``handleWebhookRequest rejects expired timestamp`` () =
     // Timestamp from 10 minutes ago (beyond 5 minute tolerance)
-    let oldTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600L
-    let signature = buildSignature testConfig.EndpointSecret payload oldTimestamp
-    let result = verifyWebhookSignature testConfig signature payload
-    Assert.False(result, "Expired timestamp should be rejected")
+    let signature = signatureHeader testConfig.EndpointSecret paymentIntentSucceeded (now () - 600L)
+    assertInvalidSignature signature paymentIntentSucceeded
 
 [<Fact>]
-let ``verifyWebhookSignature rejects malformed signature`` () =
-    let payload = """{"id":"evt_1"}"""
-    let result = verifyWebhookSignature testConfig "not_a_valid_signature" payload
-    Assert.False(result, "Malformed signature should be rejected")
+let ``handleWebhookRequest rejects malformed signature`` () =
+    assertInvalidSignature "not_a_valid_signature" paymentIntentSucceeded
 
 [<Fact>]
-let ``verifyWebhookSignature rejects empty signature`` () =
-    let payload = """{"id":"evt_1"}"""
-    let result = verifyWebhookSignature testConfig "" payload
-    Assert.False(result, "Empty signature should be rejected")
+let ``handleWebhookRequest rejects empty and missing signature`` () =
+    Task.WhenAll(
+        assertInvalidSignature "" paymentIntentSucceeded,
+        assertInvalidSignature null paymentIntentSucceeded)
+
+[<Fact>]
+let ``handleWebhookRequest returns 200 for unsupported event type`` () =
+    async {
+        let payload = eventPayload "evt_unsup" "plan.created" """{ "id": "plan_123", "object": "plan" }"""
+        let signature = signatureHeader testConfig.EndpointSecret payload (now ())
+        let! (result, statusCode) = handleWebhookRequest testConfig signature payload
+        Assert.Equal(200, statusCode)
+        match result with
+        | UnsupportedEvent name -> Assert.Equal("plan.created", name)
+        | other -> Assert.Fail($"Expected UnsupportedEvent, got {other}")
+    } |> Async.StartImmediateAsTask :> Task
+
+[<Fact>]
+let ``handleWebhookRequest returns 500 when the event object does not match its type`` () =
+    async {
+        // A signed payment_intent.succeeded event whose object is not a payment intent
+        let payload = eventPayload "evt_bad" "payment_intent.succeeded" """{ "id": "plan_123", "object": "plan" }"""
+        let signature = signatureHeader testConfig.EndpointSecret payload (now ())
+        let! (result, statusCode) = handleWebhookRequest testConfig signature payload
+        Assert.Equal(500, statusCode)
+        match result with
+        | Failed _ -> ()
+        | other -> Assert.Fail($"Expected Failed, got {other}")
+    } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
 // processWebhookEvent tests
@@ -91,74 +125,41 @@ let ``verifyWebhookSignature rejects empty signature`` () =
 [<Fact>]
 let ``processWebhookEvent handles PaymentIntentSucceeded`` () =
     async {
-        let event = {
-            Id = "evt_test_001"
-            Type = "payment_intent.succeeded"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
-        | Processed msg -> Assert.NotEmpty(msg)
+        match! processWebhookEvent (eventOf "payment_intent.succeeded" paymentIntentObject) with
+        | Processed msg ->
+            Assert.Contains("pi_3SampleSucceeded", msg)
+            Assert.Contains("cus_SampleCustomer", msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``processWebhookEvent handles PaymentIntentPaymentFailed`` () =
     async {
-        let event = {
-            Id = "evt_test_002"
-            Type = "payment_intent.payment_failed"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
-        | Processed msg -> Assert.NotEmpty(msg)
+        match! processWebhookEvent (eventOf "payment_intent.payment_failed" failedPaymentIntentObject) with
+        | Processed msg -> Assert.Contains("pi_3SampleSucceeded", msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``processWebhookEvent handles SetupIntentSucceeded`` () =
     async {
-        let event = {
-            Id = "evt_test_003"
-            Type = "setup_intent.succeeded"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
-        | Processed msg -> Assert.NotEmpty(msg)
+        match! processWebhookEvent (eventOf "setup_intent.succeeded" FakeStripeServer.setupIntentJson) with
+        | Processed msg -> Assert.Contains("payment method saved", msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``processWebhookEvent handles CustomerCreated`` () =
     async {
-        let event = {
-            Id = "evt_test_004"
-            Type = "customer.created"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
-        | Processed msg -> Assert.NotEmpty(msg)
+        match! processWebhookEvent (eventOf "customer.created" FakeStripeServer.customerJson) with
+        | Processed msg -> Assert.Contains("cus_FakeCustomer", msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
 let ``processWebhookEvent handles ChargeSucceeded`` () =
     async {
-        let event = {
-            Id = "evt_test_005"
-            Type = "charge.succeeded"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
+        match! processWebhookEvent (eventOf "charge.succeeded" """{ "id": "ch_123", "object": "charge" }""") with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
@@ -166,70 +167,43 @@ let ``processWebhookEvent handles ChargeSucceeded`` () =
 [<Fact>]
 let ``processWebhookEvent handles InvoicePaymentSucceeded`` () =
     async {
-        let event = {
-            Id = "evt_test_006"
-            Type = "invoice.payment_succeeded"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
+        match! processWebhookEvent (eventOf "invoice.payment_succeeded" """{ "id": "in_123", "object": "invoice" }""") with
         | Processed msg -> Assert.NotEmpty(msg)
         | other -> Assert.Fail($"Expected Processed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
-let ``processWebhookEvent returns UnsupportedEvent for unknown types`` () =
+let ``processWebhookEvent returns UnsupportedEvent for event types FunStripe does not know`` () =
     async {
-        let event = {
-            Id = "evt_test_007"
-            Type = "unknown.event.type"
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            Livemode = false
-            Data = None
-        }
-        match! processWebhookEvent testConfig event with
+        let stripeEvent = eventOf "unknown.event.type" """{ "id": "obj_123" }"""
+        Assert.Equal(EventType.UnknownEnumValue "unknown.event.type", stripeEvent.Type)
+        match! processWebhookEvent stripeEvent with
         | UnsupportedEvent name -> Assert.Equal("unknown.event.type", name)
         | other -> Assert.Fail($"Expected UnsupportedEvent, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
-// handleWebhookRequest integration tests
+// eventTypeName tests
 // =============================================================================
 
 [<Fact>]
-let ``handleWebhookRequest returns InvalidSignature for bad signature`` () =
-    async {
-        let payload = """{"id":"evt_1","type":"payment_intent.succeeded"}"""
-        let! (result, statusCode) = handleWebhookRequest testConfig "bad_sig" payload "payment_intent.succeeded" "evt_1"
-        Assert.Equal(400, statusCode)
-        match result with
-        | InvalidSignature -> ()
-        | other -> Assert.Fail($"Expected InvalidSignature, got {other}")
-    } |> Async.StartImmediateAsTask :> Task
+let ``eventTypeName returns the name Stripe uses`` () =
+    Assert.Equal("payment_intent.succeeded", eventTypeName EventType.PaymentIntentSucceeded)
+    Assert.Equal("customer.created", eventTypeName EventType.CustomerCreated)
+    Assert.Equal("some.new_event", eventTypeName (EventType.UnknownEnumValue "some.new_event"))
 
-[<Fact>]
-let ``handleWebhookRequest processes valid request`` () =
-    async {
-        let payload = """{"id":"evt_valid","type":"payment_intent.succeeded"}"""
-        let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        let signature = buildSignature testConfig.EndpointSecret payload timestamp
-        let! (result, statusCode) = handleWebhookRequest testConfig signature payload "payment_intent.succeeded" "evt_valid"
-        Assert.Equal(200, statusCode)
-        match result with
-        | Processed _ -> ()
-        | other -> Assert.Fail($"Expected Processed, got {other}")
-    } |> Async.StartImmediateAsTask :> Task
+// =============================================================================
+// Endpoint secret tests
+// =============================================================================
 
-[<Fact>]
-let ``handleWebhookRequest returns 200 for unsupported event type`` () =
+[<Theory; InlineData(""); InlineData("   "); InlineData("whsec_...")>]
+let ``handleWebhookRequest rejects every delivery while the endpoint secret is not configured`` (secret: string) =
     async {
-        let payload = """{"id":"evt_unsup","type":"plan.created"}"""
-        let timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        let signature = buildSignature testConfig.EndpointSecret payload timestamp
-        let! (result, statusCode) = handleWebhookRequest testConfig signature payload "plan.created" "evt_unsup"
-        Assert.Equal(200, statusCode)
+        // Correctly signed with the blank or placeholder secret, which anyone could do
+        let signature = signatureHeader secret paymentIntentSucceeded (now ())
+        let! (result, statusCode) = handleWebhookRequest { EndpointSecret = secret } signature paymentIntentSucceeded
+        Assert.Equal(500, statusCode)
         match result with
-        | UnsupportedEvent _ -> ()
-        | other -> Assert.Fail($"Expected UnsupportedEvent, got {other}")
+        | Failed msg -> Assert.Contains("not configured", msg)
+        | other -> Assert.Fail($"Expected Failed, got {other}")
     } |> Async.StartImmediateAsTask :> Task
