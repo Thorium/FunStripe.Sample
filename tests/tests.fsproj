@@ -13,6 +13,12 @@
     <Compile Include="../webhooks/Events.fs" />
     <Compile Include="../webhooks/WebhookHandler.fs" />
     <Compile Include="../webhooks/WebhookSamples.fs" />
+    <Compile Include="../src/DirectDebit.fs" />
+    <Compile Include="../src/FinancialConnections.fs" />
+    <Compile Include="../src/Issuing.fs" />
+    <Compile Include="../src/DisputeHandling.fs" />
+    <Compile Include="../src/WebshopCheckout.fs" />
+    <Compile Include="../src/Memberships.fs" />
     <Compile Include="../src/IntegrationExample.fs" />
     <!-- Test files -->
     <Compile Include="FakeStripeServer.fs" />
@@ -20,12 +26,19 @@
     <Compile Include="WebhookHandlerTests.fs" />
     <Compile Include="StripeServiceTests.fs" />
     <Compile Include="IntegrationExampleTests.fs" />
+    <Compile Include="DirectDebitTests.fs" />
+    <Compile Include="FinancialConnectionsTests.fs" />
+    <Compile Include="IssuingTests.fs" />
+    <Compile Include="DisputeHandlingTests.fs" />
+    <Compile Include="WebshopCheckoutTests.fs" />
+    <Compile Include="MembershipsTests.fs" />
     <Compile Include="LiveTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../src/appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

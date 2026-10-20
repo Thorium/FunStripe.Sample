@@ -1,0 +1,33 @@
+{
+  "amount": -2500,
+  "amount_details": null,
+  "authorization": null,
+  "balance_transaction": null,
+  "card": "ic_1Test",
+  "cardholder": null,
+  "created": 1790000000,
+  "currency": "eur",
+  "dispute": null,
+  "id": "ipi_1Test",
+  "livemode": false,
+  "merchant_amount": -2500,
+  "merchant_currency": "eur",
+  "merchant_data": {
+    "category": "computer_software_stores",
+    "category_code": "x",
+    "city": null,
+    "country": null,
+    "name": "Test Merchant",
+    "network_id": "x",
+    "postal_code": null,
+    "state": null,
+    "tax_id": null,
+    "terminal_id": null,
+    "url": null
+  },
+  "metadata": {},
+  "network_data": null,
+  "object": "issuing.transaction",
+  "type": "capture",
+  "wallet": null
+}

@@ -1,0 +1,30 @@
+{
+  "billing": {
+    "address": {
+      "city": null,
+      "country": null,
+      "line1": null,
+      "line2": null,
+      "postal_code": null,
+      "state": null
+    }
+  },
+  "company": null,
+  "created": 1790000000,
+  "email": null,
+  "id": "ich_1Test",
+  "individual": null,
+  "livemode": false,
+  "metadata": {},
+  "name": "Jenny Rosen",
+  "object": "issuing.cardholder",
+  "phone_number": null,
+  "preferred_locales": null,
+  "requirements": {
+    "disabled_reason": null,
+    "past_due": null
+  },
+  "spending_controls": null,
+  "status": "active",
+  "type": "individual"
+}

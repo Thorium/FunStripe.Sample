@@ -18,6 +18,11 @@ type RecordedRequest = {
     Path: string
     /// The decoded form parameters of the request body
     Form: Map<string, string>
+    /// The decoded query string parameters
+    Query: Map<string, string>
+    /// The Authorization and Content-Type headers
+    Authorization: string option
+    ContentType: string option
     StripeVersion: string option
     IdempotencyKey: string option
     /// True when the idempotency key was seen before and the first response was sent again
@@ -89,6 +94,17 @@ let respondOk (request: RecordedRequest) =
 /// Rejects every request the way Stripe rejects invalid parameters
 let respondError (_: RecordedRequest) = 400, errorJson
 
+/// A JSON file of tests/fixtures. The fixtures are Stripe objects with every field the
+/// FunStripe models require, generated from Stripe's OpenAPI spec and edited by hand.
+let fixture (name: string) =
+    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", name + ".json"))
+
+/// Answers a request to one of the paths with its JSON, and any other request with 404
+let respondWithRoutes (routes: (string * string) list) (request: RecordedRequest) =
+    match routes |> List.tryFind (fun (path, _) -> path = request.Path) with
+    | Some (_, json) -> 200, json
+    | None -> 404, errorJson
+
 let private freePort () =
     use probe = new TcpListener(IPAddress.Loopback, 0)
     probe.Start()
@@ -123,6 +139,9 @@ type FakeStripe(respond: RecordedRequest -> int * string) =
                     Method = context.Request.HttpMethod
                     Path = context.Request.Url.AbsolutePath
                     Form = parseForm (reader.ReadToEnd())
+                    Query = parseForm (context.Request.Url.Query.TrimStart '?')
+                    Authorization = context.Request.Headers.["Authorization"] |> Option.ofObj
+                    ContentType = context.Request.ContentType |> Option.ofObj
                     StripeVersion = context.Request.Headers.["Stripe-Version"] |> Option.ofObj
                     IdempotencyKey = idempotencyKey
                     Replayed = idempotencyKey |> Option.exists responsesByKey.ContainsKey
@@ -152,6 +171,9 @@ type FakeStripe(respond: RecordedRequest -> int * string) =
     /// FunStripe settings that send the requests to this server
     member _.Settings =
         RestApi.StripeApiSettings.New(apiKey = "sk_test_fake", baseUrl = baseUrl, stripeVersion = Config.DefaultStripeApiVersion)
+
+    /// Where the server listens, e.g. for the files host of an upload
+    member _.BaseUrl = baseUrl
 
     /// The requests received so far, oldest first
     member _.Requests = requests |> Seq.toList

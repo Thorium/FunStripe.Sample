@@ -1,0 +1,23 @@
+{
+  "customer_acceptance": {
+    "accepted_at": 1790000000,
+    "type": "online",
+    "online": {
+      "ip_address": "203.0.113.7",
+      "user_agent": "Mozilla/5.0"
+    }
+  },
+  "id": "mandate_1Test",
+  "livemode": false,
+  "object": "mandate",
+  "payment_method": "pm_1TestSepa",
+  "payment_method_details": {
+    "type": "sepa_debit",
+    "sepa_debit": {
+      "reference": "ABC123",
+      "url": "https://stripe.com/mandate"
+    }
+  },
+  "status": "inactive",
+  "type": "multi_use"
+}

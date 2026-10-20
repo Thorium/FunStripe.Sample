@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FunStripe Sample - Financial Connections</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <p><a href="index.html">Card payments</a> · <a href="direct-debit.html">Direct debit</a> · Financial Connections</p>
+        <h1>Link a Bank Account</h1>
+
+        <div class="section">
+            <h2>Open the Financial Connections dialog</h2>
+            <p>Run <code>dotnet fsi examples/FinancialConnections.fsx</code> and paste the session's client secret it prints.</p>
+            <form id="link-form">
+                <div class="payment-amount">
+                    <label for="publishable-key">Publishable key:</label>
+                    <input type="text" id="publishable-key" placeholder="pk_test_..." autocomplete="off">
+                </div>
+                <div class="payment-amount">
+                    <label for="client-secret">Client secret:</label>
+                    <input type="text" id="client-secret" placeholder="fcsess_..._secret_..." autocomplete="off">
+                </div>
+                <button type="submit" id="link-submit">Link accounts</button>
+            </form>
+        </div>
+
+        <div id="result" class="result hidden" role="status"></div>
+
+        <div class="section">
+            <h2>Integration Notes</h2>
+            <div class="notes">
+                <h3>In test mode</h3>
+                <ul>
+                    <li>Pick one of the test institutions Stripe lists; each one shows what it simulates</li>
+                    <li>The session only links US accounts (<code>filters[country]=US</code>)</li>
+                </ul>
+                <h3>After linking</h3>
+                <ol>
+                    <li>Run the script again with the session ID to read the accounts, balance and transactions</li>
+                    <li>Your backend gets <code>financial_connections.account.created</code> per account (<code>FinancialConnections.processEvent</code>)</li>
+                    <li>Refreshes are asynchronous: wait for <code>refreshed_balance</code> / <code>refreshed_transactions</code></li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script src="use-case-common.js"></script>
+    <script src="financial-connections.js"></script>
+</body>
+</html>

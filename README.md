@@ -8,13 +8,67 @@ This repository uses the [FunStripe.Core](https://www.nuget.org/packages/FunStri
 
 ## Overview
 
-This sample covers the most important use cases for a minimum viable product (MVP):
+The sample is split by use case, so you can read only the one you need. Every use case has a module in `src/` with the FunStripe calls and its webhook events, a runnable script in `examples/`, tests in `tests/` and, where the customer takes part, a page in `frontend/`.
 
-- Creating Stripe customers
-- Setting up payment methods with Setup Intents
-- Processing one-time payments with Payment Intents
-- Handling webhooks for payment events
-- Frontend integration with Stripe Elements
+| Use case | What it does | Code | Run it | Frontend |
+| --- | --- | --- | --- | --- |
+| Webshop checkout | Sell goods on Stripe's hosted payment page: cart, shipping, VAT, fulfilment, refunds | [`WebshopCheckout.fs`](src/WebshopCheckout.fs) | [`WebshopCheckout.fsx`](examples/WebshopCheckout.fsx) | Stripe's hosted page |
+| Memberships | A monthly gym membership by direct debit: joining fee, freezes, notice, member portal, door access | [`Memberships.fs`](src/Memberships.fs) | [`Memberships.fsx`](examples/Memberships.fsx) | Stripe's hosted pages |
+| Card payments | One-time card payments and saved cards | [`StripeService.fs`](src/StripeService.fs), [`WebhookHandler.fs`](webhooks/WebhookHandler.fs) | [`CardPayments.fsx`](examples/CardPayments.fsx) | [`index.html`](frontend/index.html) |
+| Direct debit | Save a bank account with a mandate (SEPA, ACH, Bacs, BECS) and debit it off-session | [`DirectDebit.fs`](src/DirectDebit.fs) | [`DirectDebit.fsx`](examples/DirectDebit.fsx) | [`direct-debit.html`](frontend/direct-debit.html) |
+| Open banking | Link a customer's bank accounts with Financial Connections and screen the transactions for gambling, a sign of a potentially vulnerable customer | [`FinancialConnections.fs`](src/FinancialConnections.fs) | [`FinancialConnections.fsx`](examples/FinancialConnections.fsx) | [`financial-connections.html`](frontend/financial-connections.html) |
+| Card issuing | Issue your own virtual and physical cards, with your card design and real-time approval of purchases | [`Issuing.fs`](src/Issuing.fs) | [`Issuing.fsx`](examples/Issuing.fsx) | none (a back-office flow) |
+| Disputes | Respond to chargebacks with evidence or accept them, and refund on early fraud warnings | [`DisputeHandling.fs`](src/DisputeHandling.fs) | [`Disputes.fsx`](examples/Disputes.fsx) | none (a back-office flow) |
+
+`StripeService.fs` also holds what the use cases share: configuration, idempotency keys and customers. Each use case has its own `processEvent` and webhook endpoint (`DirectDebit.handleWebhookRequest`, ...). Stripe lets you create several webhook endpoints, each subscribed to the events it handles, so adding a use case does not touch the endpoints you already run.
+
+### Running an example
+
+The scripts run against Stripe test mode with the test key in `STRIPE_TEST_API_KEY` (they refuse a live key) and need nothing but the .NET SDK:
+
+```bash
+dotnet fsi examples/DirectDebit.fsx
+```
+
+Each script starts with a comment that says what it needs from your Stripe account and which arguments it takes. Where a step needs the customer in a browser (confirming a setup intent, logging in to a bank), the script prints a client secret: serve `frontend/` (see [Test the Frontend](#3-test-the-frontend)), open the use case's page and paste it there together with your publishable key.
+
+### Webshop checkout
+
+The shop keeps the catalog and the cart; `WebshopCheckout.createCheckoutSession` prices the cart from the catalog (never from what the browser sends) and Stripe's page takes it from there: shipping address, shipping option, phone number for the carrier, promotion codes and the payment. Leaving the payment methods out lets Checkout offer what you turn on in the Dashboard (cards, wallets, MobilePay, Klarna, ...). With `AutomaticTax` Stripe Tax adds the VAT of the delivery country, with prices that include it.
+
+Fulfil on `checkout.session.completed` when the session is `paid`, and on `checkout.session.async_payment_succeeded` for payment methods that confirm later. `orderToFulfil` returns the lines (with your SKUs) and the shipping address; the success page can call it too, so fulfil once per order ID. `refundOrder` refunds a whole order or part of it.
+
+### Memberships
+
+A membership is a subscription (Stripe Billing); direct debit is how it is paid. The monthly fee and the joining fee are prices found by lookup key (`ensureCatalog`). A member signs up online on a Checkout page in subscription mode, which collects the IBAN and the SEPA mandate, or at the front desk, where `DirectDebit.setupSepaWithIban` saves the bank account and `startMembership` starts the subscription with it.
+
+Stripe invoices every month and retries a bounced debit on the schedule set under Settings > Billing; `invoice.payment_failed` says when it retries. `accessOf` turns the subscription status into what the door does: in while paid up, a grace period while a debit is retried, out when paused, unpaid or cancelled. A freeze uses Stripe's subscription pause (no invoices, the period stops) and ends with a new period from that day. `cancelAtPeriodEnd` handles notice, and `memberPortalUrl` lets members change their bank account or see their invoices themselves.
+
+### Direct debit
+
+A bank debit is not instant. `DirectDebit.chargeSavedAccount` returns a payment intent in `processing`, and the money arrives days later with `payment_intent.succeeded`, or does not, with `payment_intent.payment_failed`. Fulfil orders on the event, and stop charging a payment method once `mandate.updated` reports its mandate `inactive`. The Payment Element shows the customer the mandate text each scheme requires; `DirectDebit.setupSepaWithIban` does the same setup in one server-side call, which the example uses to run without a browser. Turn on the schemes you need under Settings > Payment methods in the Dashboard.
+
+### Open banking (Financial Connections)
+
+Financial Connections links US bank accounts. The customer logs in to their bank in Stripe's dialog and agrees to share their transactions; your backend subscribes to them and screens them after each `financial_connections.account.refreshed_transactions` event. To take ACH payments from the account instead, use the direct debit flow with `DirectDebit.UsBankAccount`, whose setup intent runs the same dialog.
+
+`FinancialConnections.screenAccountForGambling` finds payments to and from gambling operators and returns `NoGamblingFound`, `BelowThresholds` or `NeedsReview` with the reasons (share of spending, gambling days per month, optionally net loss). Stripe's transactions carry only the bank's description, no merchant category, so the match is by operator names and gambling words (`gamblingTerms`); extend the list for your market and set the thresholds from your own policy. The result is a signal for a person who handles vulnerable customers, not a decision about the customer.
+
+FunStripe.Core 3.0.0 cannot deserialise a `FinancialConnectionsAccount` that has a balance (it types the integer balance maps as `Map<string, string list>`), and its `FinancialConnectionsAccounts.List` drops the `accountHolder` filter. `FinancialConnections.fs` therefore reads accounts as JSON into its own `LinkedAccount`; a test fails once FunStripe reads balances, as a reminder to switch back to the FunStripe model.
+
+### Card issuing
+
+Issuing needs a Stripe account approved for it, in a country where Stripe offers it, and an Issuing balance that funds the purchases. A physical card is printed with a *personalization design*: a physical bundle (card stock and packaging, `Issuing.activeBundles`), your logo (`Issuing.uploadCardLogo`) and the text of the carrier letter. Stripe reviews each design and reports the outcome with `issuing_personalization_design.activated` or `.rejected`.
+
+Purchases are approved in real time by `Issuing.handleAuthorizationRequest`, which answers Stripe's `issuing_authorization.request` in the HTTP response. It runs on an endpoint of its own, set in the Issuing settings of the Dashboard, and has 2 seconds to answer. The approve and decline API endpoints that used to do this are deprecated.
+
+FunStripe.Core 3.0.0's `Files.Create` cannot upload a file (Stripe takes uploads as multipart on `files.stripe.com`), so `uploadCardLogo` sends the upload with `HttpClient`. It returns only the file ID, because Stripe's OpenAPI spec leaves the `issuing_logo` purpose out of the `File` model.
+
+### Disputes
+
+Stripe takes a disputed amount and the dispute fee from your balance as soon as `charge.dispute.created` arrives. `DisputeHandling.processEvent` turns the dispute into a `DisputeNotice` (the payment intent to find your order by, the amount, the reason and the evidence deadline): hold the order, flag the customer and give someone the deadline. Before it passes, either `submitEvidence` (for a webshop: carrier, tracking number, delivery address; `saveEvidence` keeps a draft) or `acceptDispute`. `charge.dispute.closed` tells you whether you won.
+
+An early fraud warning (`radar.early_fraud_warning.created`) means the card issuer has reported the payment as fraud and a dispute is likely to follow. Refunding it with `refundEarlyFraudWarning` costs the amount but no dispute fee. In test mode `examples/Disputes.fsx` pays with `pm_card_createDispute`, which is disputed at once, and decides the outcome with the evidence text `winning_evidence` or `losing_evidence`.
 
 ## Prerequisites
 
@@ -281,25 +335,52 @@ match OperationId.tryCreate request.IdempotencyKey with
 FunStripe.Sample/
 ├── README.md                 # This file
 ├── src/
-│   ├── Program.fs              # Main sample application
-│   ├── StripeService.fs        # Core Stripe operations
+│   ├── StripeService.fs        # Shared (configuration, idempotency, customers) and card payments
+│   ├── DirectDebit.fs          # Direct debit: bank account setup, mandates, off-session debits
+│   ├── FinancialConnections.fs # Open banking: linked accounts, gambling screening of transactions
+│   ├── Issuing.fs              # Card issuing: cardholders, cards, card designs, authorizations
+│   ├── DisputeHandling.fs      # Disputes: evidence, outcomes, early fraud warnings
+│   ├── WebshopCheckout.fs      # Webshop: Checkout Sessions, fulfilment, refunds
+│   ├── Memberships.fs          # Memberships: subscriptions, freezes, access
 │   ├── IntegrationExample.fs   # Web API integration patterns
+│   ├── Program.fs              # Console demo of the card payments
 │   ├── appsettings.json        # Configuration (Stripe keys)
 │   └── FunStripe.Sample.fsproj
+├── examples/
+│   ├── Common.fsx              # Shared setup of the scripts
+│   ├── CardPayments.fsx        # One runnable script per use case
+│   ├── DirectDebit.fsx
+│   ├── FinancialConnections.fsx
+│   ├── Issuing.fsx
+│   ├── Disputes.fsx
+│   ├── WebshopCheckout.fsx
+│   └── Memberships.fsx
 ├── frontend/
-│   ├── index.html              # Sample payment form
-│   ├── stripe-integration.js   # Stripe Elements integration
+│   ├── index.html              # Card payments with Stripe Elements
+│   ├── stripe-integration.js
+│   ├── direct-debit.html       # Direct debit setup with the Payment Element
+│   ├── direct-debit.js
+│   ├── financial-connections.html # Linking bank accounts
+│   ├── financial-connections.js
+│   ├── use-case-common.js      # Shared by the two pages above
 │   └── styles.css              # Basic styling
 ├── webhooks/
 │   ├── WebhookHandler.fs       # Signature verification and event dispatch
-│   ├── Events.fs               # Business logic per event
+│   ├── Events.fs               # Business logic per card payment event
 │   └── WebhookSamples.fs       # Sample payloads and signatures for local runs
 └── tests/
     ├── FakeStripeServer.fs     # Local stand-in for api.stripe.com
+    ├── fixtures/               # Stripe objects for the fake server and the webhook tests
     ├── EventsTests.fs          # Event handler tests
     ├── WebhookHandlerTests.fs  # Signature verification and processing tests
     ├── StripeServiceTests.fs   # Service, request encoding and config tests
     ├── IntegrationExampleTests.fs # Endpoint tests
+    ├── DirectDebitTests.fs     # One test file per use case
+    ├── FinancialConnectionsTests.fs
+    ├── IssuingTests.fs
+    ├── DisputeHandlingTests.fs
+    ├── WebshopCheckoutTests.fs
+    ├── MembershipsTests.fs
     ├── LiveTests.fs            # Calls Stripe test mode (needs STRIPE_TEST_API_KEY)
     └── tests.fsproj
 ```
@@ -423,32 +504,8 @@ let ``createCustomer posts name and email and returns the customer`` () =
 
 ## Common Integration Patterns
 
-### Subscription Billing
-
-```fsharp
-open StripeRequest.Subscriptions
-
-let createSubscription customerId priceId paymentMethodId =
-    Subscriptions.CreateOptions.New(
-        customer = customerId,
-        items = [Subscriptions.Create'Items.New(price = priceId)],
-        defaultPaymentMethod = paymentMethodId
-    )
-    |> Subscriptions.Create settings
-```
-
-### Refund Processing
-
-```fsharp
-open StripeRequest.Refunds
-
-let processRefund paymentIntentId amount =
-    Refunds.CreateOptions.New(
-        paymentIntent = paymentIntentId,
-        amount = amount
-    )
-    |> Refunds.Create settings
-```
+- **Subscription billing**: [`Memberships.fs`](src/Memberships.fs), a monthly plan with a joining fee, pauses and cancellation
+- **Refunds**: `WebshopCheckout.refundOrder` (an order, in full or in part) and `DisputeHandling.refundEarlyFraudWarning`
 
 ## Upgrading from FunStripeLite 1.x
 
@@ -464,11 +521,8 @@ See FunStripe's [CHANGELOG](https://github.com/simontreanor/FunStripe/blob/main/
 ## Next Steps
 
 For production applications, consider implementing:
-- Customer portal for managing payment methods
-- Subscription billing (if applicable)
 - Advanced webhook handling (retries, idempotency)
-- Multi-party payments and marketplace features
-- Dispute handling workflows
+- Multi-party payments and marketplace features (Stripe Connect)
 
 ## Resources
 

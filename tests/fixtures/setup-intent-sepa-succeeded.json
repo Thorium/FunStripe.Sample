@@ -1,0 +1,31 @@
+{
+  "allowed_payment_method_types": [
+    "sepa_debit"
+  ],
+  "application": null,
+  "automatic_payment_methods": null,
+  "cancellation_reason": null,
+  "client_secret": "seti_1TestSepa_secret_fake",
+  "created": 1790000000,
+  "customer": "cus_FakeCustomer",
+  "description": null,
+  "excluded_payment_method_types": null,
+  "id": "seti_1TestSepa",
+  "last_setup_error": null,
+  "latest_attempt": null,
+  "livemode": false,
+  "mandate": "mandate_1Test",
+  "metadata": null,
+  "next_action": null,
+  "object": "setup_intent",
+  "on_behalf_of": null,
+  "payment_method": "pm_1TestSepa",
+  "payment_method_configuration_details": null,
+  "payment_method_options": null,
+  "payment_method_types": [
+    "sepa_debit"
+  ],
+  "single_use_mandate": null,
+  "status": "succeeded",
+  "usage": "off_session"
+}

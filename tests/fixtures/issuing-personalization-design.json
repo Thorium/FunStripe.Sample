@@ -1,0 +1,21 @@
+{
+  "card_logo": null,
+  "carrier_text": null,
+  "created": 1790000000,
+  "id": "ipcd_1Test",
+  "livemode": false,
+  "lookup_key": "employee-card",
+  "metadata": {},
+  "name": "Employee card",
+  "object": "issuing.personalization_design",
+  "physical_bundle": "ics_1Test",
+  "preferences": {
+    "is_default": false,
+    "is_platform_default": null
+  },
+  "rejection_reasons": {
+    "card_logo": null,
+    "carrier_text": null
+  },
+  "status": "review"
+}

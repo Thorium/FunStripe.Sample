@@ -6,8 +6,8 @@ open Stripe.PaymentMethod
 // The handlers below take the FunStripe models (PaymentIntent, SetupIntent, Customer)
 // that the webhook handler extracts from an event's `data.object`.
 
-// We leave disputes out for now, but they are important if you have a service where
-// your customers want to cancel their payments afterwards.
+// Disputes (chargebacks) and early fraud warnings have their own use case: see
+// src/DisputeHandling.fs.
 
 /// Event processing result
 type EventProcessingResult =
@@ -20,7 +20,7 @@ type EventProcessingResult =
 let paymentIntentCustomerId (paymentIntent: PaymentIntent) =
     paymentIntent.Customer
     |> Option.map (function
-        | PaymentIntentCustomer'AnyOf.String id -> id
+        | PaymentIntentCustomer'AnyOf.String pid -> pid
         | PaymentIntentCustomer'AnyOf.Customer customer -> customer.Id
         | PaymentIntentCustomer'AnyOf.DeletedCustomer customer -> customer.Id)
 
@@ -28,7 +28,7 @@ let paymentIntentCustomerId (paymentIntent: PaymentIntent) =
 let setupIntentCustomerId (setupIntent: SetupIntent) =
     setupIntent.Customer
     |> Option.map (function
-        | SetupIntentCustomer'AnyOf.String id -> id
+        | SetupIntentCustomer'AnyOf.String pid -> pid
         | SetupIntentCustomer'AnyOf.Customer customer -> customer.Id
         | SetupIntentCustomer'AnyOf.DeletedCustomer customer -> customer.Id)
 

@@ -1,0 +1,64 @@
+{
+  "brand": "Visa",
+  "cancellation_reason": null,
+  "cardholder": {
+    "billing": {
+      "address": {
+        "city": null,
+        "country": null,
+        "line1": null,
+        "line2": null,
+        "postal_code": null,
+        "state": null
+      }
+    },
+    "company": null,
+    "created": 1790000000,
+    "email": null,
+    "id": "ich_1Test",
+    "individual": null,
+    "livemode": false,
+    "metadata": {},
+    "name": "Jenny Rosen",
+    "object": "issuing.cardholder",
+    "phone_number": null,
+    "preferred_locales": null,
+    "requirements": {
+      "disabled_reason": null,
+      "past_due": null
+    },
+    "spending_controls": null,
+    "status": "active",
+    "type": "individual"
+  },
+  "created": 1790000000,
+  "currency": "eur",
+  "exp_month": 12,
+  "exp_year": 2029,
+  "id": "ic_1Test",
+  "last4": "4242",
+  "latest_fraud_warning": null,
+  "lifecycle_controls": null,
+  "livemode": false,
+  "metadata": {},
+  "object": "issuing.card",
+  "personalization_design": null,
+  "replaced_by": null,
+  "replacement_for": null,
+  "replacement_reason": null,
+  "second_line": null,
+  "shipping": null,
+  "spending_controls": {
+    "allowed_card_presences": null,
+    "allowed_categories": null,
+    "allowed_merchant_countries": null,
+    "blocked_card_presences": null,
+    "blocked_categories": null,
+    "blocked_merchant_countries": null,
+    "spending_limits": null,
+    "spending_limits_currency": null
+  },
+  "status": "active",
+  "type": "virtual",
+  "wallets": null
+}

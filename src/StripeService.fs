@@ -127,7 +127,7 @@ let idempotencyKeyFor (OperationId operationId) (step: string) =
     IdempotencyKey $"{operationId}:{step}"
 
 /// The settings for the one request that carries the key
-let private withKey (IdempotencyKey key) (settings: RestApi.StripeApiSettings) =
+let withKey (IdempotencyKey key) (settings: RestApi.StripeApiSettings) =
     settings.WithIdempotencyKey key
 
 /// Request options for a new customer
@@ -174,6 +174,44 @@ let createPaymentIntent (settings: RestApi.StripeApiSettings) (idempotencyKey: I
     paymentIntentOptions amount currency customerId
     |> PaymentIntents.Create (settings |> withKey idempotencyKey)
 
+// File uploads
+// ============
+
+/// Where Stripe accepts file uploads. FunStripe.Core 3.0.0's `Files.Create` sends a form to
+/// the API host instead of a multipart upload to this one, so `uploadFile` does the upload.
+[<Literal>]
+let stripeFilesBaseUrl = "https://files.stripe.com"
+
+/// Uploads a file to Stripe and returns its file ID. `purpose` is what the file is for, e.g.
+/// `dispute_evidence` for a receipt or `issuing_logo` for a card logo.
+let uploadFile (http: Net.Http.HttpClient) (settings: RestApi.StripeApiSettings) (filesBaseUrl: string) (purpose: string) (fileName: string) (contentType: string) (content: byte array) =
+    async {
+        // Part names quoted, as Stripe's own clients send them
+        let quoted (s: string) = "\"" + s + "\""
+        use form = new Net.Http.MultipartFormDataContent()
+        form.Add(new Net.Http.StringContent(purpose), quoted "purpose")
+        let file = new Net.Http.ByteArrayContent(content)
+        file.Headers.ContentType <- Net.Http.Headers.MediaTypeHeaderValue(contentType)
+        form.Add(file, quoted "file", quoted fileName)
+
+        use request = new Net.Http.HttpRequestMessage(Net.Http.HttpMethod.Post, $"{filesBaseUrl}/v1/files", Content = form)
+        request.Headers.Authorization <- Net.Http.Headers.AuthenticationHeaderValue("Bearer", settings.ApiKey)
+        settings.StripeVersion |> Option.iter (fun version -> request.Headers.Add("Stripe-Version", version))
+        settings.IdempotencyKey |> Option.iter (fun key -> request.Headers.Add("Idempotency-Key", key))
+
+        let! cancellationToken = Async.CancellationToken
+        use! response = http.SendAsync(request, cancellationToken) |> Async.AwaitTask
+        let! body = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+        // The answer is a File, but FunStripe.Core 3.0.0's File model lacks some purposes Stripe
+        // uses (e.g. `issuing_logo`): take the ID from the JSON
+        return
+            if response.IsSuccessStatusCode then
+                use document = Text.Json.JsonDocument.Parse body
+                Ok ((document.RootElement.GetProperty "id").GetString())
+            else
+                Error (Util.deserialise<StripeError.ErrorResponse> body)
+    }
+
 /// The message Stripe returned, with its error code when there is one
 let describeStripeError (error: StripeError.ErrorResponse) =
     let message = error.StripeError.Message |> Option.defaultValue "Unknown error"
@@ -185,11 +223,11 @@ let describeStripeError (error: StripeError.ErrorResponse) =
 let handleStripeError (error: StripeError.ErrorResponse) =
     printfn $"Stripe Error: {describeStripeError error}"
 
-/// To turn this into a production service:
-/// 1. Add logging and retries (the idempotency keys make it safe to retry a create)
-/// 2. Add database integration for customer/payment tracking, including the operation IDs
-///    the idempotency keys are derived from
-/// 3. Add business logic for order processing
-///
-/// See the webhooks/ directory for handling Stripe events
-/// See the frontend/ directory for Stripe Elements integration
+// To turn this into a production service:
+// 1. Add logging and retries (the idempotency keys make it safe to retry a create)
+// 2. Add database integration for customer/payment tracking, including the operation IDs
+//    the idempotency keys are derived from
+// 3. Add business logic for order processing
+//
+// See the webhooks/ directory for handling Stripe events
+// See the frontend/ directory for Stripe Elements integration

@@ -222,3 +222,11 @@ button:disabled {
         width: 100%;
     }
 }
+
+.hidden {
+    display: none;
+}
+
+.payment-amount input[type="text"] {
+    width: 100%;
+}

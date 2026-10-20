@@ -1,0 +1,86 @@
+{
+  "object": "list",
+  "url": "/v1/financial_connections/accounts",
+  "has_more": false,
+  "data": [
+    {
+      "id": "fca_1Test",
+      "object": "financial_connections.account",
+      "account_holder": {
+        "type": "customer",
+        "customer": "cus_FakeCustomer"
+      },
+      "balance": {
+        "as_of": 1790000000,
+        "cash": {
+          "available": {
+            "usd": 5000
+          }
+        },
+        "current": {
+          "usd": 6000
+        },
+        "type": "cash"
+      },
+      "balance_refresh": {
+        "last_attempted_at": 1790000000,
+        "next_refresh_available_at": 1790003600,
+        "status": "succeeded"
+      },
+      "category": "cash",
+      "created": 1790000000,
+      "display_name": "Sample Checking",
+      "institution_name": "StripeBank",
+      "last4": "6789",
+      "livemode": false,
+      "ownership": null,
+      "ownership_refresh": null,
+      "permissions": [
+        "balances",
+        "ownership",
+        "transactions"
+      ],
+      "status": "active",
+      "subcategory": "checking",
+      "subscriptions": [],
+      "supported_payment_method_types": [
+        "us_bank_account"
+      ],
+      "transaction_refresh": null
+    },
+    {
+      "id": "fca_2Test",
+      "object": "financial_connections.account",
+      "account_holder": {
+        "type": "customer",
+        "customer": "cus_FakeCustomer"
+      },
+      "balance": null,
+      "balance_refresh": {
+        "last_attempted_at": 1790000000,
+        "next_refresh_available_at": 1790003600,
+        "status": "succeeded"
+      },
+      "category": "cash",
+      "created": 1790000000,
+      "display_name": null,
+      "institution_name": "StripeBank",
+      "last4": "1111",
+      "livemode": false,
+      "ownership": null,
+      "ownership_refresh": null,
+      "permissions": [
+        "balances",
+        "ownership",
+        "transactions"
+      ],
+      "status": "inactive",
+      "subcategory": "checking",
+      "subscriptions": [],
+      "supported_payment_method_types": [
+        "us_bank_account"
+      ],
+      "transaction_refresh": null
+    }
+  ]
+}

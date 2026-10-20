@@ -1,0 +1,22 @@
+{
+  "account_holder": {
+    "type": "customer",
+    "customer": "cus_FakeCustomer"
+  },
+  "accounts": {
+    "data": [],
+    "has_more": false,
+    "object": "list",
+    "url": "/v1/financial_connections/accounts"
+  },
+  "client_secret": "fcsess_1Test_secret_fake",
+  "id": "fcsess_1Test",
+  "livemode": false,
+  "object": "financial_connections.session",
+  "permissions": [
+    "balances",
+    "ownership",
+    "transactions"
+  ],
+  "prefetch": null
+}

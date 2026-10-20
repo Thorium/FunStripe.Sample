@@ -1,0 +1,70 @@
+{
+  "application": null,
+  "application_fee_percent": null,
+  "automatic_tax": {
+    "disabled_reason": null,
+    "enabled": false,
+    "liability": null
+  },
+  "billing_cycle_anchor": 1790000000,
+  "billing_cycle_anchor_config": null,
+  "billing_mode": {
+    "flexible": null,
+    "type": "classic"
+  },
+  "billing_schedules": [],
+  "billing_thresholds": null,
+  "cancel_at": null,
+  "cancel_at_period_end": false,
+  "canceled_at": null,
+  "cancellation_details": null,
+  "collection_method": "charge_automatically",
+  "created": 1790000000,
+  "currency": "eur",
+  "customer": "cus_FakeCustomer",
+  "customer_account": null,
+  "days_until_due": null,
+  "default_payment_method": null,
+  "default_source": null,
+  "description": null,
+  "discounts": [],
+  "ended_at": null,
+  "id": "sub_1Gym",
+  "invoice_settings": {
+    "account_tax_ids": null,
+    "custom_fields": null,
+    "description": null,
+    "footer": null,
+    "issuer": {
+      "type": "account"
+    }
+  },
+  "items": {
+    "object": "list",
+    "data": [],
+    "has_more": false,
+    "url": "/v1/subscription_items"
+  },
+  "latest_invoice": null,
+  "livemode": false,
+  "managed_payments": null,
+  "metadata": {
+    "member_id": "member-7"
+  },
+  "next_pending_invoice_item_invoice": null,
+  "object": "subscription",
+  "on_behalf_of": null,
+  "pause_collection": null,
+  "payment_settings": null,
+  "pending_invoice_item_interval": null,
+  "pending_setup_intent": null,
+  "pending_update": null,
+  "schedule": null,
+  "start_date": 1790000000,
+  "status": "active",
+  "test_clock": null,
+  "transfer_data": null,
+  "trial_end": null,
+  "trial_settings": null,
+  "trial_start": null
+}

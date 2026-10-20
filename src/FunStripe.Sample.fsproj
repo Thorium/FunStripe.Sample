@@ -12,6 +12,12 @@
     <Compile Include="../webhooks/Events.fs" />
     <Compile Include="../webhooks/WebhookHandler.fs" />
     <Compile Include="../webhooks/WebhookSamples.fs" />
+    <Compile Include="DirectDebit.fs" />
+    <Compile Include="FinancialConnections.fs" />
+    <Compile Include="Issuing.fs" />
+    <Compile Include="DisputeHandling.fs" />
+    <Compile Include="WebshopCheckout.fs" />
+    <Compile Include="Memberships.fs" />
     <Compile Include="IntegrationExample.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

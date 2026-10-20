@@ -1,0 +1,10 @@
+{
+  "actionable": true,
+  "charge": "ch_1Test",
+  "created": 1790000000,
+  "fraud_type": "unauthorized_use_of_card",
+  "id": "issfr_1Test",
+  "livemode": false,
+  "object": "radar.early_fraud_warning",
+  "payment_intent": "pi_1Test"
+}

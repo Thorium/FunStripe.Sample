@@ -1,0 +1,13 @@
+{
+  "features": {
+    "card_logo": "required",
+    "carrier_text": "optional",
+    "second_line": "unsupported"
+  },
+  "id": "ics_1Test",
+  "livemode": false,
+  "name": "Standard white",
+  "object": "issuing.physical_bundle",
+  "status": "active",
+  "type": "standard"
+}

@@ -24,7 +24,7 @@ let eventTypeName (eventType: EventType) =
     | EventType.UnknownEnumValue name -> name
     | known -> (Util.serialise known).Trim '"'
 
-let private toWebhookResult result =
+let toWebhookResult result =
     match result with
     | Success msg -> Processed msg
     | HandlerError msg -> Failed msg
@@ -95,14 +95,17 @@ let processWebhookEvent (stripeEvent: Event) =
 
 /// A signature only proves something when the secret is one nobody else knows. With a blank
 /// secret, or the "whsec_..." placeholder of appsettings.json, anyone could sign a payload.
-let private isSecretConfigured (secret: string) =
+let isSecretConfigured (secret: string) =
     not (String.IsNullOrWhiteSpace secret || secret.EndsWith("...", StringComparison.Ordinal))
 
-/// Main webhook endpoint handler
+/// A webhook endpoint handler that verifies the delivery and processes its event with
+/// `processEvent`. Each use case of this sample has a `processEvent` of its own (see
+/// `processWebhookEvent` above, `DirectDebit.processEvent`, ...), so that it can have its
+/// own webhook endpoint: Stripe sends an endpoint only the event types it subscribes to.
 /// This would typically be called from your web framework (ASP.NET Core, Giraffe, etc.)
 /// with the value of the Stripe-Signature header and the raw request body. The body must
 /// be the exact bytes Stripe sent: a re-serialised copy does not match the signature.
-let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: string) =
+let handleWebhookRequestWith (processEvent: Event -> Async<WebhookResult>) (config: WebhookConfig) (signature: string) (payload: string) =
     async {
         try
             if not (isSecretConfigured config.EndpointSecret) then
@@ -131,7 +134,7 @@ let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: s
                 let stripeEvent = Util.deserialise<Event> payload
 
                 // 3. Process the event
-                let! result = processWebhookEvent stripeEvent
+                let! result = processEvent stripeEvent
 
                 match result with
                 | Processed msg ->
@@ -153,6 +156,10 @@ let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: s
             return Failed ex.Message, 500
     }
 
+/// The webhook endpoint for the card payment events of this sample
+let handleWebhookRequest (config: WebhookConfig) (signature: string) (payload: string) =
+    handleWebhookRequestWith processWebhookEvent config signature payload
+
 /// Helper to log webhook events for debugging
 let logWebhookEvent (stripeEvent: Event) =
     printfn "=== Webhook Event ==="
@@ -162,11 +169,11 @@ let logWebhookEvent (stripeEvent: Event) =
     printfn $"Livemode: {stripeEvent.Livemode}"
     printfn "==================="
 
-/// Before taking this to production:
-///
-/// 1. Store the IDs of processed events and skip the ones already seen (Stripe retries
-///    and can deliver an event more than once)
-/// 2. Return quickly and do slow work on a queue; Stripe times a delivery out
-/// 3. Use database transactions for business logic
-/// 4. During development, forward events to your machine with the Stripe CLI:
-///    `stripe listen --forward-to localhost:5000/webhooks/stripe`
+// Before taking this to production:
+//
+// 1. Store the IDs of processed events and skip the ones already seen (Stripe retries
+//    and can deliver an event more than once)
+// 2. Return quickly and do slow work on a queue; Stripe times a delivery out
+// 3. Use database transactions for business logic
+// 4. During development, forward events to your machine with the Stripe CLI:
+//    `stripe listen --forward-to localhost:5000/webhooks/stripe`

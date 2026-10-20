@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FunStripe Sample - Direct Debit</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <p><a href="index.html">Card payments</a> · Direct debit · <a href="financial-connections.html">Financial Connections</a></p>
+        <h1>Direct Debit Setup</h1>
+
+        <div class="section">
+            <h2>1. Load the setup intent</h2>
+            <p>Run <code>dotnet fsi examples/DirectDebit.fsx</code> and paste the setup intent's client secret it prints.</p>
+            <form id="load-form">
+                <div class="payment-amount">
+                    <label for="publishable-key">Publishable key:</label>
+                    <input type="text" id="publishable-key" placeholder="pk_test_..." autocomplete="off">
+                </div>
+                <div class="payment-amount">
+                    <label for="client-secret">Client secret:</label>
+                    <input type="text" id="client-secret" placeholder="seti_..._secret_..." autocomplete="off">
+                </div>
+                <button type="submit">Show the bank details form</button>
+            </form>
+        </div>
+
+        <div class="section hidden" id="setup-section">
+            <h2>2. Enter the bank details and accept the mandate</h2>
+            <p>The Payment Element shows the fields and the mandate text of the scheme the setup intent allows.</p>
+            <form id="setup-form">
+                <div id="payment-element"></div>
+                <button type="submit" id="setup-submit">Save bank account</button>
+            </form>
+        </div>
+
+        <div id="result" class="result hidden" role="status"></div>
+
+        <div class="section">
+            <h2>Integration Notes</h2>
+            <div class="notes">
+                <h3>Test bank details</h3>
+                <ul>
+                    <li><strong>SEPA, succeeds:</strong> IBAN DE89370400440532013000</li>
+                    <li><strong>SEPA, debit fails:</strong> IBAN DE62370400440532013001</li>
+                    <li><strong>Bacs:</strong> sort code 108800, account 00012345</li>
+                    <li><strong>BECS:</strong> BSB 000000, account 000123456</li>
+                    <li><strong>ACH:</strong> pick a test bank in the Financial Connections dialog</li>
+                </ul>
+                <h3>After the setup</h3>
+                <ol>
+                    <li><code>setup_intent.succeeded</code> gives you the payment method and mandate to store (<code>DirectDebit.processEvent</code>)</li>
+                    <li>Charge it off-session with <code>DirectDebit.chargeSavedAccount</code></li>
+                    <li>The debit is <code>processing</code> for days; fulfil on <code>payment_intent.succeeded</code></li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script src="use-case-common.js"></script>
+    <script src="direct-debit.js"></script>
+</body>
+</html>
