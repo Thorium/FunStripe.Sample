@@ -105,18 +105,26 @@ let ``handleWebhookRequest returns 200 for unsupported event type`` () =
         | other -> Assert.Fail($"Expected UnsupportedEvent, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
-[<Fact>]
-let ``handleWebhookRequest returns 500 when the event object does not match its type`` () =
+let assertUnreadable (expectedEventId: string) (payload: string) =
     async {
-        // A signed payment_intent.succeeded event whose object is not a payment intent
-        let payload = eventPayload "evt_bad" "payment_intent.succeeded" """{ "id": "plan_123", "object": "plan" }"""
         let signature = signatureHeader testConfig.EndpointSecret payload (now ())
         let! (result, statusCode) = handleWebhookRequest testConfig signature payload
-        Assert.Equal(500, statusCode)
+        Assert.Equal(200, statusCode)
         match result with
-        | Failed _ -> ()
-        | other -> Assert.Fail($"Expected Failed, got {other}")
+        | Unreadable (eventId, _) -> Assert.Equal(expectedEventId, eventId)
+        | other -> Assert.Fail($"Expected Unreadable, got {other}")
     } |> Async.StartImmediateAsTask :> Task
+
+[<Fact>]
+let ``handleWebhookRequest acknowledges a verified event whose object does not match its type`` () =
+    // A signed payment_intent.succeeded event whose object is not a payment intent
+    eventPayload "evt_bad" "payment_intent.succeeded" """{ "id": "plan_123", "object": "plan" }"""
+    |> assertUnreadable "evt_bad"
+
+[<Fact>]
+let ``handleWebhookRequest acknowledges a verified event it cannot read`` () =
+    (eventPayload "evt_bad_event" "payment_intent.succeeded" paymentIntentObject).Replace("\"pending_webhooks\": 1", "\"pending_webhooks\": \"many\"")
+    |> assertUnreadable "evt_bad_event"
 
 // =============================================================================
 // processWebhookEvent tests

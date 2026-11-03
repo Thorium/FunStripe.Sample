@@ -203,7 +203,7 @@ let processEvent (stripeEvent: Event) =
     async {
         match stripeEvent.Type with
         | EventType.SetupIntentSucceeded ->
-            let setupIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<SetupIntent>
+            let setupIntent = stripeEvent |> eventObject<SetupIntent>
             match savedBankAccount setupIntent with
             | Some account ->
                 // Store the payment method and mandate with your customer record
@@ -213,7 +213,7 @@ let processEvent (stripeEvent: Event) =
                 return Failed $"Setup intent {setupIntent.Id} succeeded without a customer or payment method"
 
         | EventType.SetupIntentSetupFailed ->
-            let setupIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<SetupIntent>
+            let setupIntent = stripeEvent |> eventObject<SetupIntent>
             let reason =
                 setupIntent.LastSetupError
                 |> Option.bind (fun error -> error.Message)
@@ -222,7 +222,7 @@ let processEvent (stripeEvent: Event) =
             return Processed $"Setup intent {setupIntent.Id} failed: {reason}"
 
         | EventType.MandateUpdated ->
-            let mandate = stripeEvent.Data.Object |> Util.deserialiseRaw<Mandate>
+            let mandate = stripeEvent |> eventObject<Mandate>
             let (StripeId paymentMethodId) = mandate.PaymentMethod
             match mandate.Status with
             | MandateStatus.Inactive ->
@@ -233,19 +233,19 @@ let processEvent (stripeEvent: Event) =
                 return Processed $"Mandate {mandate.Id} of {paymentMethodId} is {status}"
 
         | EventType.PaymentIntentProcessing ->
-            let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+            let paymentIntent = stripeEvent |> eventObject<PaymentIntent>
             // Show the order as "payment pending"; the bank confirms in a few business days
             return Processed $"Debit {paymentIntent.Id} submitted to the bank"
 
         | EventType.PaymentIntentSucceeded ->
-            let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+            let paymentIntent = stripeEvent |> eventObject<PaymentIntent>
             let! result = handlePaymentSuccess paymentIntent
             return toWebhookResult result
 
         | EventType.PaymentIntentPaymentFailed ->
             // For a debit this is e.g. insufficient funds or a closed account, days after
             // the charge. Retry later or ask the customer for another payment method.
-            let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+            let paymentIntent = stripeEvent |> eventObject<PaymentIntent>
             let! result = handlePaymentFailure paymentIntent
             return toWebhookResult result
 

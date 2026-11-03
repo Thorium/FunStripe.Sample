@@ -1,0 +1,40 @@
+{
+  "object": "funding_instructions",
+  "bank_transfer": {
+    "country": "GB",
+    "financial_addresses": [
+      {
+        "sort_code": {
+          "account_holder_address": {
+            "city": "London",
+            "country": "GB",
+            "line1": "9th Floor, 107 Cheapside",
+            "line2": null,
+            "postal_code": "EC2V6DN",
+            "state": "London"
+          },
+          "account_holder_name": "Stripe Payments UK Limited",
+          "account_number": "98575148",
+          "bank_address": {
+            "city": "London",
+            "country": "GB",
+            "line1": "1 CHURCHILL PLACE",
+            "line2": null,
+            "postal_code": "E14 5HP",
+            "state": "England"
+          },
+          "sort_code": "281214"
+        },
+        "supported_networks": [
+          "bacs",
+          "fps"
+        ],
+        "type": "sort_code"
+      }
+    ],
+    "type": "gb_bank_transfer"
+  },
+  "currency": "gbp",
+  "funding_type": "bank_transfer",
+  "livemode": false
+}

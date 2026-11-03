@@ -1,0 +1,224 @@
+{
+  "id": "iauth_1UXiRACqhpHynD1TvtQwIWm1",
+  "object": "issuing.authorization",
+  "amount": 2500,
+  "amount_details": {
+    "atm_fee": null,
+    "cashback_amount": 0
+  },
+  "approved": true,
+  "authorization_method": "online",
+  "balance_transactions": [
+    {
+      "available_on": 1793715104,
+      "created": 1793715104,
+      "net": -2500,
+      "currency": "gbp",
+      "source": "iauth_1UXiRACqhpHynD1TvtQwIWm1",
+      "reporting_category": "issuing_authorization_hold",
+      "fee_details": [],
+      "amount": -2500,
+      "status": "available",
+      "balance_type": "issuing",
+      "object": "balance_transaction",
+      "id": "txn_1UXiRACqhpHynD1TUCHI37cc",
+      "exchange_rate": null,
+      "type": "issuing_authorization_hold",
+      "description": "Hold for authorization",
+      "fee": 0
+    }
+  ],
+  "card": {
+    "id": "ic_1UXiQzCqhpHynD1T7ByAqMuP",
+    "object": "issuing.card",
+    "brand": "Visa",
+    "cancellation_reason": null,
+    "cardholder": {
+      "id": "ich_1UXiQyCqhpHynD1TsOYgsvCN",
+      "object": "issuing.cardholder",
+      "billing": {
+        "address": {
+          "city": "London",
+          "country": "GB",
+          "line1": "1 High Street",
+          "line2": null,
+          "postal_code": "SW1A 1AA",
+          "state": null
+        }
+      },
+      "company": null,
+      "created": 1793715092,
+      "email": "zoe.price@example.com",
+      "individual": {
+        "card_issuing": {
+          "user_terms_acceptance": {
+            "date": 1793715094,
+            "ip": "203.0.113.5",
+            "user_agent": null
+          }
+        },
+        "dob": {
+          "day": 2,
+          "month": 4,
+          "year": 1991
+        },
+        "first_name": "Zoe",
+        "last_name": "Price",
+        "verification": {
+          "document": {
+            "back": null,
+            "front": null
+          }
+        }
+      },
+      "livemode": false,
+      "metadata": {},
+      "name": "Zoe Price",
+      "phone_number": "+447700900123",
+      "preferred_locales": [],
+      "requirements": {
+        "disabled_reason": null,
+        "past_due": []
+      },
+      "spending_controls": {
+        "allowed_card_presences": [],
+        "allowed_categories": [],
+        "allowed_merchant_countries": [],
+        "blocked_card_presences": [],
+        "blocked_categories": [],
+        "blocked_merchant_countries": [],
+        "spending_limits": [],
+        "spending_limits_currency": null
+      },
+      "status": "active",
+      "type": "individual"
+    },
+    "created": 1793715093,
+    "currency": "gbp",
+    "exp_month": 8,
+    "exp_year": 2029,
+    "last4": "0153",
+    "latest_fraud_warning": null,
+    "lifecycle_controls": null,
+    "livemode": false,
+    "metadata": {},
+    "migrate_tokens_from": null,
+    "personalization_design": null,
+    "pin": null,
+    "replaced_by": null,
+    "replacement_for": null,
+    "replacement_reason": null,
+    "second_line": null,
+    "shipping": null,
+    "spending_controls": {
+      "allowed_card_presences": null,
+      "allowed_categories": null,
+      "allowed_merchant_countries": null,
+      "blocked_card_presences": null,
+      "blocked_categories": [
+        "automated_cash_disburse",
+        "manual_cash_disburse",
+        "betting_casino_gambling",
+        "government_owned_lotteries_non_us_region",
+        "government_owned_lotteries_us_region_only",
+        "government_licensed_online_casions_online_gambling_us_region_only",
+        "government_licensed_horse_dog_racing_us_region_only"
+      ],
+      "blocked_merchant_countries": null,
+      "spending_limits": [
+        {
+          "amount": 50000,
+          "categories": [],
+          "interval": "daily"
+        }
+      ],
+      "spending_limits_currency": "gbp"
+    },
+    "status": "active",
+    "type": "virtual",
+    "wallets": {
+      "apple_pay": {
+        "eligible": true,
+        "ineligible_reason": null
+      },
+      "google_pay": {
+        "eligible": true,
+        "ineligible_reason": null
+      },
+      "primary_account_identifier": null
+    }
+  },
+  "card_presence": "not_present",
+  "cardholder": "ich_1UXiQyCqhpHynD1TsOYgsvCN",
+  "created": 1793715104,
+  "currency": "gbp",
+  "fleet": null,
+  "fuel": null,
+  "livemode": false,
+  "merchant_amount": 2500,
+  "merchant_currency": "gbp",
+  "merchant_data": {
+    "category": "service_stations",
+    "category_code": "5541",
+    "city": "San Francisco",
+    "country": "US",
+    "name": "Fuel Co",
+    "network_id": "1234567890",
+    "postal_code": "94103",
+    "state": "CA",
+    "tax_id": null,
+    "terminal_id": "99999999",
+    "url": "https://rocketrides.io/"
+  },
+  "metadata": {},
+  "network_data": {
+    "acquiring_institution_id": "123456",
+    "system_trace_audit_number": "1234567890",
+    "transaction_id": "test_783805070263107"
+  },
+  "pending_request": {
+    "amount": 800,
+    "amount_details": {
+      "atm_fee": null,
+      "cashback_amount": 0
+    },
+    "currency": "gbp",
+    "is_amount_controllable": true,
+    "merchant_amount": 800,
+    "merchant_currency": "gbp",
+    "network_risk_score": 10
+  },
+  "request_history": [
+    {
+      "amount": 2500,
+      "amount_details": {
+        "atm_fee": null,
+        "cashback_amount": null
+      },
+      "approved": true,
+      "authorization_code": "S68786",
+      "created": 1793715105,
+      "currency": "gbp",
+      "merchant_amount": 2500,
+      "merchant_currency": "gbp",
+      "network_risk_score": 10,
+      "reason": "webhook_approved",
+      "reason_message": null,
+      "requested_at": 1768262400
+    }
+  ],
+  "status": "pending",
+  "token": null,
+  "transactions": [],
+  "verification_data": {
+    "address_line1_check": "not_provided",
+    "address_postal_code_check": "not_provided",
+    "authentication_exemption": null,
+    "cvc_check": "not_provided",
+    "expiry_check": "match",
+    "postal_code": "94103",
+    "three_d_secure": null
+  },
+  "verified_by_fraud_challenge": false,
+  "wallet": null
+}

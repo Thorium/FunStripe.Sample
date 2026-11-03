@@ -40,7 +40,8 @@
     "enhanced_eligibility": {},
     "has_evidence": false,
     "past_due": false,
-    "submission_count": 0
+    "submission_count": 0,
+    "submission_method": "not_submitted"
   },
   "id": "dp_1Test",
   "is_charge_refundable": false,

@@ -267,7 +267,7 @@ let refundOrder (settings: RestApi.StripeApiSettings) (idempotencyKey: Idempoten
 /// hence the settings.
 let processEvent (settings: RestApi.StripeApiSettings) (stripeEvent: Event) =
     async {
-        let session () = stripeEvent.Data.Object |> Util.deserialiseRaw<CheckoutSession>
+        let session () = stripeEvent |> eventObject<CheckoutSession>
 
         match stripeEvent.Type with
         | EventType.CheckoutSessionCompleted
@@ -297,7 +297,7 @@ let processEvent (settings: RestApi.StripeApiSettings) (stripeEvent: Event) =
 
         | EventType.ChargeRefunded ->
             // Find the order by the payment intent you stored with it (OrderToFulfil.PaymentIntentId)
-            let charge = stripeEvent.Data.Object |> Util.deserialiseRaw<Charge>
+            let charge = stripeEvent |> eventObject<Charge>
             let paymentIntent = charge.PaymentIntent |> Option.map (fun (StripeId pid) -> pid) |> Option.defaultValue "(none)"
             return Processed $"{charge.AmountRefunded} {charge.Currency} refunded of payment {paymentIntent}"
 

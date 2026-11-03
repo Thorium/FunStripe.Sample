@@ -17,6 +17,20 @@ type WebhookResult =
     | Failed of string
     | InvalidSignature
     | UnsupportedEvent of string
+    /// A verified delivery whose event or object the FunStripe models cannot read
+    | Unreadable of eventId: string * reason: string
+
+/// Raised by `eventObject` when an event's object does not deserialise into its model
+exception UnreadableEvent of eventId: string * reason: string
+
+/// The event's object as the model of its event type. Raises `UnreadableEvent` when it does
+/// not deserialise, e.g. on an enum value newer than this FunStripe version: Stripe adds enum
+/// values without a new API version.
+let eventObject<'T> (stripeEvent: Event) : 'T =
+    try
+        Util.deserialiseRaw<'T> stripeEvent.Data.Object
+    with ex ->
+        raise (UnreadableEvent (stripeEvent.Id, ex.Message))
 
 /// The event type as Stripe spells it, e.g. "payment_intent.succeeded"
 let eventTypeName (eventType: EventType) =
@@ -47,25 +61,25 @@ let processWebhookEvent (stripeEvent: Event) =
             warnOnApiVersionMismatch stripeEvent
 
             // Event.Data.Object keeps the JSON of the event's object as Stripe sent it;
-            // Util.deserialiseRaw turns it into the model that belongs to the event type.
+            // eventObject turns it into the model that belongs to the event type.
             match stripeEvent.Type with
             | EventType.PaymentIntentSucceeded ->
-                let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+                let paymentIntent = stripeEvent |> eventObject<PaymentIntent>
                 let! result = handlePaymentSuccess paymentIntent
                 return toWebhookResult result
 
             | EventType.PaymentIntentPaymentFailed ->
-                let paymentIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<PaymentIntent>
+                let paymentIntent = stripeEvent |> eventObject<PaymentIntent>
                 let! result = handlePaymentFailure paymentIntent
                 return toWebhookResult result
 
             | EventType.SetupIntentSucceeded ->
-                let setupIntent = stripeEvent.Data.Object |> Util.deserialiseRaw<SetupIntent>
+                let setupIntent = stripeEvent |> eventObject<SetupIntent>
                 let! result = handleSetupSuccess setupIntent
                 return toWebhookResult result
 
             | EventType.CustomerCreated ->
-                let customer = stripeEvent.Data.Object |> Util.deserialiseRaw<Customer>
+                let customer = stripeEvent |> eventObject<Customer>
                 let! result = handleCustomerCreated customer
                 return toWebhookResult result
 
@@ -87,6 +101,8 @@ let processWebhookEvent (stripeEvent: Event) =
                 return UnsupportedEvent eventTypeName
 
         with
+        | UnreadableEvent (eventId, reason) ->
+            return Unreadable (eventId, reason)
         | ex ->
             printfn $"Error processing webhook event: {ex.Message}"
             printfn $"Stack trace: {ex.StackTrace}"
@@ -98,6 +114,19 @@ let processWebhookEvent (stripeEvent: Event) =
 let isSecretConfigured (secret: string) =
     not (String.IsNullOrWhiteSpace secret || secret.EndsWith("...", StringComparison.Ordinal))
 
+/// The payload as FunStripe's `Event`, or `Unreadable` with the event ID read from the JSON
+let private tryReadEvent (payload: string) =
+    try
+        Ok (Util.deserialise<Event> payload)
+    with ex ->
+        let eventId =
+            try
+                use document = System.Text.Json.JsonDocument.Parse payload
+                document.RootElement.GetProperty("id").GetString()
+            with _ ->
+                "(no id)"
+        Error (Unreadable (eventId, ex.Message))
+
 /// A webhook endpoint handler that verifies the delivery and processes its event with
 /// `processEvent`. Each use case of this sample has a `processEvent` of its own (see
 /// `processWebhookEvent` above, `DirectDebit.processEvent`, ...), so that it can have its
@@ -105,6 +134,12 @@ let isSecretConfigured (secret: string) =
 /// This would typically be called from your web framework (ASP.NET Core, Giraffe, etc.)
 /// with the value of the Stripe-Signature header and the raw request body. The body must
 /// be the exact bytes Stripe sent: a re-serialised copy does not match the signature.
+///
+/// A verified delivery that the FunStripe models cannot read is answered 200 and logged as an
+/// alert, like an unhandled event. Stripe sends the same JSON on every retry, so a 500 would
+/// fail again each time, and Stripe disables an endpoint that keeps failing, which stops its
+/// other events too. Process such an event after upgrading FunStripe: retrieve it by its ID
+/// (`GET /v1/events/{id}`, kept for 30 days).
 let handleWebhookRequestWith (processEvent: Event -> Async<WebhookResult>) (config: WebhookConfig) (signature: string) (payload: string) =
     async {
         try
@@ -130,11 +165,17 @@ let handleWebhookRequestWith (processEvent: Event -> Async<WebhookResult>) (conf
                 printfn $"[WARN] Invalid webhook signature: {reason}"
                 return InvalidSignature, 400
             | Ok () ->
-                // 2. Parse the verified payload into FunStripe's Event model
-                let stripeEvent = Util.deserialise<Event> payload
-
-                // 3. Process the event
-                let! result = processEvent stripeEvent
+                // 2. Parse the verified payload into FunStripe's Event model, 3. process the event
+                let! result =
+                    match tryReadEvent payload with
+                    | Error unreadable -> async { return unreadable }
+                    | Ok stripeEvent ->
+                        async {
+                            try
+                                return! processEvent stripeEvent
+                            with UnreadableEvent (eventId, reason) ->
+                                return Unreadable (eventId, reason)
+                        }
 
                 match result with
                 | Processed msg ->
@@ -149,6 +190,9 @@ let handleWebhookRequestWith (processEvent: Event -> Async<WebhookResult>) (conf
                 | UnsupportedEvent unsupported ->
                     printfn $"[INFO] Unsupported event type: {unsupported}"
                     return result, 200  // Still return 200 to acknowledge receipt
+                | Unreadable (eventId, reason) ->
+                    printfn $"[ALERT] Event {eventId} could not be read and was not processed: {reason}"
+                    return result, 200
 
         with
         | ex ->

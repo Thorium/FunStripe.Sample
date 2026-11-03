@@ -6,7 +6,7 @@
 //   export STRIPE_TEST_API_KEY=sk_test_...      (bash)
 //   $env:STRIPE_TEST_API_KEY = "sk_test_..."    (PowerShell)
 
-#r "nuget: FunStripe.Core, 3.0.0"
+#r "nuget: FunStripe.Core, 3.1.1"
 #r "nuget: Microsoft.Extensions.Configuration, 10.0.10"
 #r "nuget: Microsoft.Extensions.Configuration.Json, 10.0.10"
 

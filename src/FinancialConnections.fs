@@ -20,7 +20,6 @@ module FinancialConnections
 // See examples/FinancialConnections.fsx for a run against Stripe test mode.
 
 open System
-open System.Text.Json
 open FunStripe
 open FunStripe.AsyncResultCE
 open FunStripe.IsoTypes
@@ -62,131 +61,51 @@ let createSession (settings: RestApi.StripeApiSettings) (idempotencyKey: Idempot
 
 // Linked accounts
 // ===============
-// FunStripe.Core 3.0.0 types the balance amounts of an account (`balance.current`,
-// `balance.cash.available`, ...) as `Map<string, string list>`, but Stripe sends integers, so
-// a `FinancialConnectionsAccount` with a balance fails to deserialise. Its `List` also drops
-// the `accountHolder` filter from the query string. Until FunStripe fixes both, this sample
-// reads accounts as JSON into `LinkedAccount`. Sessions and transactions use FunStripe's
-// models as usual.
 
-/// A linked bank account
-type LinkedAccount = {
-    Id: string
-    InstitutionName: string
-    DisplayName: string option
-    Last4: string option
-    /// active, inactive (the bank stopped sharing data) or disconnected
-    Status: string
-    /// The permissions the customer granted for this account
-    Permissions: string list
-    /// The latest balance Stripe fetched, if you asked for balances and refreshed them
-    Balance: AccountBalance option
-}
-
-/// Balances in the smallest currency unit, by lower-case currency code
-and AccountBalance = {
-    AsOf: DateTimeOffset
-    /// What the bank reports as the balance, before pending transactions
-    Current: Map<string, int64>
-    /// For cash accounts: what can be spent or withdrawn now
-    Available: Map<string, int64>
-}
-
-let private tryProperty (name: string) (element: JsonElement) =
-    match element.TryGetProperty name with
-    | true, value when value.ValueKind <> JsonValueKind.Null -> Some value
-    | _ -> None
-
-let private tryString name element =
-    tryProperty name element |> Option.map (fun value -> value.GetString())
-
-let private amounts (element: JsonElement option) =
-    match element with
-    | Some amounts when amounts.ValueKind = JsonValueKind.Object ->
-        amounts.EnumerateObject()
-        |> Seq.map (fun amount -> amount.Name, amount.Value.GetInt64())
-        |> Map.ofSeq
-    | _ -> Map.empty
-
-let private balanceOf (account: JsonElement) =
-    tryProperty "balance" account
-    |> Option.map (fun balance ->
-        {
-            AsOf = DateTimeOffset.FromUnixTimeSeconds((balance.GetProperty "as_of").GetInt64())
-            Current = amounts (tryProperty "current" balance)
-            Available = amounts (tryProperty "cash" balance |> Option.bind (tryProperty "available"))
-        })
-
-/// Reads a Financial Connections account object
-let linkedAccountOf (account: JsonElement) =
-    {
-        Id = (account.GetProperty "id").GetString()
-        InstitutionName = tryString "institution_name" account |> Option.defaultValue ""
-        DisplayName = tryString "display_name" account
-        Last4 = tryString "last4" account
-        Status = tryString "status" account |> Option.defaultValue "unknown"
-        Permissions =
-            match tryProperty "permissions" account with
-            | Some permissions -> [ for permission in permissions.EnumerateArray() -> permission.GetString() ]
-            | None -> []
-        Balance = balanceOf account
-    }
-
-/// Reads a Financial Connections account from its JSON, e.g. a webhook event's `data.object`
-let parseLinkedAccount (json: string) =
-    use document = JsonDocument.Parse json
-    linkedAccountOf document.RootElement
-
-let private accountList (page: JsonElement) =
-    [ for account in (page.GetProperty "data").EnumerateArray() -> linkedAccountOf account ]
-
-let private accountPath (accountId: string) =
-    $"/v1/financial_connections/accounts/{Uri.EscapeDataString accountId}"
+/// "active", "inactive" (the bank stopped sharing data) or "disconnected"
+let statusName (status: FinancialConnectionsAccountStatus) =
+    match status with
+    | FinancialConnectionsAccountStatus.Active -> "active"
+    | FinancialConnectionsAccountStatus.Inactive -> "inactive"
+    | FinancialConnectionsAccountStatus.Disconnected -> "disconnected"
 
 /// The accounts the customer linked in a session
 let linkedAccounts (settings: RestApi.StripeApiSettings) (sessionId: string) =
-    "/v1/financial_connections/accounts"
-    |> RestApi.getAsync<JsonElement> settings (Map.ofList [ ("session", box (Some sessionId)) ])
-    |> AsyncResult.map accountList
+    FinancialConnectionsAccounts.ListOptions.New(session = sessionId)
+    |> FinancialConnectionsAccounts.List settings
+    |> AsyncResult.map (fun page -> page.Data)
 
 /// All the accounts a customer has linked, in any session (the first 100)
 let customerAccounts (settings: RestApi.StripeApiSettings) (customerId: string) =
-    "/v1/financial_connections/accounts"
-    |> RestApi.getAsync<JsonElement> settings (Map.ofList [ "account_holder[customer]", box (Some customerId); "limit", box (Some 100) ])
-    |> AsyncResult.map accountList
+    FinancialConnectionsAccounts.ListOptions.New(accountHolder = Map.ofList [ ("customer", customerId) ], limit = 100)
+    |> FinancialConnectionsAccounts.List settings
+    |> AsyncResult.map (fun page -> page.Data)
 
 /// The account with the data Stripe fetched last
 let retrieveAccount (settings: RestApi.StripeApiSettings) (accountId: string) =
-    accountPath accountId
-    |> RestApi.getAsync<JsonElement> settings Map.empty
-    |> AsyncResult.map linkedAccountOf
+    FinancialConnectionsAccounts.RetrieveOptions.New(account = accountId)
+    |> FinancialConnectionsAccounts.Retrieve settings
 
-/// Asks Stripe to fetch the balance from the bank. The answer has `balance_refresh.status`
-/// `pending`; read the balance after `financial_connections.account.refreshed_balance`.
+/// Asks Stripe to fetch the balance from the bank. The answer has `BalanceRefresh` `pending`;
+/// read the balance after `financial_connections.account.refreshed_balance`.
 let refreshBalance (settings: RestApi.StripeApiSettings) (accountId: string) =
-    $"{accountPath accountId}/refresh"
-    |> RestApi.postAsync<_, JsonElement> settings Map.empty
-        (FinancialConnectionsAccountsRefresh.RefreshOptions.New(
-            account = accountId,
-            features = [ FinancialConnectionsAccountsRefresh.Refresh'Features.Balance ]))
-    |> AsyncResult.map linkedAccountOf
+    FinancialConnectionsAccountsRefresh.RefreshOptions.New(
+        account = accountId,
+        features = [ FinancialConnectionsAccountsRefresh.Refresh'Features.Balance ])
+    |> FinancialConnectionsAccountsRefresh.Refresh settings
 
 /// Asks Stripe to fetch the transactions now and keep them up to date once a day. Each
 /// update sends `financial_connections.account.refreshed_transactions`.
 let subscribeToTransactions (settings: RestApi.StripeApiSettings) (accountId: string) =
-    $"{accountPath accountId}/subscribe"
-    |> RestApi.postAsync<_, JsonElement> settings Map.empty
-        (FinancialConnectionsAccountsSubscribe.SubscribeOptions.New(
-            account = accountId,
-            features = [ FinancialConnectionsAccountsSubscribe.Subscribe'Features.Transactions ]))
-    |> AsyncResult.map linkedAccountOf
+    FinancialConnectionsAccountsSubscribe.SubscribeOptions.New(
+        account = accountId,
+        features = [ FinancialConnectionsAccountsSubscribe.Subscribe'Features.Transactions ])
+    |> FinancialConnectionsAccountsSubscribe.Subscribe settings
 
 /// Stops your access to the account, e.g. when the customer closes their account with you
 let disconnect (settings: RestApi.StripeApiSettings) (accountId: string) =
-    $"{accountPath accountId}/disconnect"
-    |> RestApi.postAsync<_, JsonElement> settings Map.empty
-        (FinancialConnectionsAccountsDisconnect.DisconnectOptions.New(account = accountId))
-    |> AsyncResult.map linkedAccountOf
+    FinancialConnectionsAccountsDisconnect.DisconnectOptions.New(account = accountId)
+    |> FinancialConnectionsAccountsDisconnect.Disconnect settings
 
 /// The latest transactions Stripe fetched for the account (up to 100)
 let transactions (settings: RestApi.StripeApiSettings) (accountId: string) =
@@ -195,10 +114,10 @@ let transactions (settings: RestApi.StripeApiSettings) (accountId: string) =
     |> AsyncResult.map (fun page -> page.Data)
 
 /// "Test Bank ****6789 (active)"
-let describeAccount (account: LinkedAccount) =
+let describeAccount (account: FinancialConnectionsAccount) =
     let name = account.DisplayName |> Option.defaultValue account.InstitutionName
     let last4 = account.Last4 |> Option.map (sprintf " ****%s") |> Option.defaultValue ""
-    $"{name}{last4} ({account.Status})"
+    $"{name}{last4} ({statusName account.Status})"
 
 // Gambling transactions
 // =====================
@@ -378,8 +297,7 @@ let screenAccountForGambling (settings: RestApi.StripeApiSettings) (thresholds: 
 let processEvent (stripeEvent: Event) =
     async {
         let account () =
-            let (RawJson json) = stripeEvent.Data.Object
-            parseLinkedAccount json
+            stripeEvent |> eventObject<FinancialConnectionsAccount>
 
         match stripeEvent.Type with
         | EventType.FinancialConnectionsAccountCreated ->
@@ -406,7 +324,7 @@ let processEvent (stripeEvent: Event) =
         | EventType.FinancialConnectionsAccountDisconnected ->
             let account = account ()
             // Stop using the data; ask the customer to link the account again if you need it
-            return Processed $"Account {account.Id} is {account.Status}"
+            return Processed $"Account {account.Id} is {statusName account.Status}"
 
         | other ->
             return UnsupportedEvent (eventTypeName other)

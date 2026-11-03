@@ -244,18 +244,18 @@ let membershipOfInvoice (invoice: Invoice) =
 /// Processes the membership events
 let processEvent (stripeEvent: Event) =
     async {
-        let subscription () = stripeEvent.Data.Object |> Util.deserialiseRaw<Subscription>
+        let subscription () = stripeEvent |> eventObject<Subscription>
         let memberOf (subscription: Subscription) = subscription.Metadata.TryFind "member_id" |> Option.defaultValue "(unknown)"
 
         match stripeEvent.Type with
         | EventType.InvoicePaid ->
-            let invoice = stripeEvent.Data.Object |> Util.deserialiseRaw<Invoice>
+            let invoice = stripeEvent |> eventObject<Invoice>
             let membership = membershipOfInvoice invoice |> Option.defaultValue "(none)"
             // Record that the member has paid (`hasPaid` of accessOf)
             return Processed $"Membership {membership} paid: {invoice.AmountPaid} {invoice.Currency}"
 
         | EventType.InvoicePaymentFailed ->
-            let invoice = stripeEvent.Data.Object |> Util.deserialiseRaw<Invoice>
+            let invoice = stripeEvent |> eventObject<Invoice>
             let membership = membershipOfInvoice invoice |> Option.defaultValue "(none)"
             // Tell the member (e.g. with invoice.HostedInvoiceUrl to pay by card instead)
             match invoice.NextPaymentAttempt with

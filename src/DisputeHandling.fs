@@ -98,7 +98,7 @@ type ShippedOrderEvidence = {
     /// e.g. "2026-10-20"
     ShippingDate: string
     /// The file ID of a receipt or invoice PDF, uploaded with `StripeService.uploadFile`
-    /// (purpose `dispute_evidence`)
+    /// (purpose `DisputeEvidence`)
     ReceiptFileId: string option
     /// Anything else the bank should read, e.g. the customer's messages about the delivery
     Explanation: string option
@@ -179,7 +179,7 @@ let private describeAmount (notice: DisputeNotice) = $"{notice.Amount} {notice.C
 /// Processes the dispute events
 let processEvent (stripeEvent: Event) =
     async {
-        let dispute () = stripeEvent.Data.Object |> Util.deserialiseRaw<Dispute>
+        let dispute () = stripeEvent |> eventObject<Dispute>
 
         match stripeEvent.Type with
         | EventType.ChargeDisputeCreated ->
@@ -213,7 +213,7 @@ let processEvent (stripeEvent: Event) =
             return Processed $"Funds of dispute {dispute.Id} {direction}"
 
         | EventType.RadarEarlyFraudWarningCreated ->
-            let warning = stripeEvent.Data.Object |> Util.deserialiseRaw<RadarEarlyFraudWarning>
+            let warning = stripeEvent |> eventObject<RadarEarlyFraudWarning>
             let (StripeId chargeId) = warning.Charge
             if warning.Actionable then
                 // Decide here whether to refund (refundEarlyFraudWarning) and cancel the order

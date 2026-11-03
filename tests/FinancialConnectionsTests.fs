@@ -55,28 +55,30 @@ let ``createSession returns the client secret for the frontend`` () =
 // Accounts
 // =============================================================================
 
-[<Fact>]
-let ``parseLinkedAccount reads the integer balances FunStripe 3.0.0 cannot`` () =
-    let account = parseLinkedAccount (fixture "financial-connections-account")
-    Assert.Equal("fca_1Test", account.Id)
-    Assert.Equal(Some "6789", account.Last4)
-    Assert.Equal<string list>([ "balances"; "ownership"; "transactions" ], account.Permissions)
-    match account.Balance with
-    | Some balance ->
-        Assert.Equal<Map<string, int64>>(Map.ofList [ "usd", 6000L ], balance.Current)
-        Assert.Equal<Map<string, int64>>(Map.ofList [ "usd", 5000L ], balance.Available)
-        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds 1790000000L, balance.AsOf)
-    | None -> Assert.Fail "Expected a balance"
+let account () =
+    fixture "financial-connections-account" |> Util.deserialise<Stripe.PaymentMethod.FinancialConnectionsAccount>
 
 [<Fact>]
-let ``the FunStripe model still fails on a balance, so the workaround is still needed`` () =
-    // When this test fails, FunStripe reads Financial Connections balances: replace
-    // LinkedAccount with Stripe.PaymentMethod.FinancialConnectionsAccount
-    Assert.ThrowsAny<exn>(fun () ->
-        fixture "financial-connections-account"
-        |> Util.deserialise<Stripe.PaymentMethod.FinancialConnectionsAccount>
-        |> ignore)
-    |> ignore
+let ``FunStripe's model reads an account with its integer balances`` () =
+    let account = account ()
+    Assert.Equal("fca_1Test", account.Id)
+    Assert.Equal(Some "6789", account.Last4)
+
+    Assert.Equal(
+        Some [
+            Stripe.PaymentMethod.FinancialConnectionsAccountPermissions.Balances
+            Stripe.PaymentMethod.FinancialConnectionsAccountPermissions.Ownership
+            Stripe.PaymentMethod.FinancialConnectionsAccountPermissions.Transactions
+        ],
+        account.Permissions
+    )
+
+    match account.Balance with
+    | Some balance ->
+        Assert.Equal<Map<string, int>>(Map.ofList [ "usd", 6000 ], balance.Current)
+        Assert.Equal(Some(Map.ofList [ "usd", 5000 ]), balance.Cash |> Option.bind _.Available)
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1790000000L).UtcDateTime, balance.AsOf)
+    | None -> Assert.Fail "Expected a balance"
 
 [<Fact>]
 let ``linkedAccounts asks for the accounts of the session`` () =
@@ -130,7 +132,7 @@ let ``transactions lists the account's transactions with FunStripe's model`` () 
 
 [<Fact>]
 let ``describeAccount falls back to the institution name`` () =
-    let account = parseLinkedAccount (fixture "financial-connections-account")
+    let account = account ()
     Assert.Equal("Sample Checking ****6789 (active)", describeAccount account)
     Assert.Equal("StripeBank (active)", describeAccount { account with DisplayName = None; Last4 = None })
 
@@ -149,6 +151,22 @@ let ``refreshed_balance reports the new balance`` () =
         match result with
         | Processed message -> Assert.Contains("6000 usd", message)
         | other -> Assert.Fail($"Expected Processed, got {other}")
+    } |> Async.StartImmediateAsTask :> Task
+
+[<Fact>]
+let ``an account with an enum value newer than FunStripe is acknowledged, not answered 500`` () =
+    async {
+        let secret = "whsec_test_fc"
+        let account = (fixture "financial-connections-account").Replace("\"category\": \"cash\"", "\"category\": \"crypto_wallet\"")
+        let payload = eventPayload "evt_test_fc_new_enum" "financial_connections.account.created" account
+        let signature = signatureHeader secret payload (DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+        let! result, statusCode = FinancialConnections.handleWebhookRequest { EndpointSecret = secret } signature payload
+        Assert.Equal(200, statusCode)
+        match result with
+        | Unreadable (eventId, reason) ->
+            Assert.Equal("evt_test_fc_new_enum", eventId)
+            Assert.Contains("crypto_wallet", reason)
+        | other -> Assert.Fail($"Expected Unreadable, got {other}")
     } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================
