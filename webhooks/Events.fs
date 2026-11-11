@@ -89,7 +89,8 @@ let handleSetupSuccess (setupIntent: SetupIntent) =
             | None ->
                 return Success $"Setup intent {setupIntent.Id} processed"
         | None ->
-            return HandlerError $"Setup intent {setupIntent.Id} succeeded but no customer"
+            // Nothing to act on, and a retry brings the same event: acknowledge it (200), don't fail (500)
+            return Ignored $"Setup intent {setupIntent.Id} succeeded but no customer"
     }
 
 /// Business logic for handling customer creation

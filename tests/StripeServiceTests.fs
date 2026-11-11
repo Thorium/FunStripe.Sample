@@ -244,3 +244,24 @@ let ``a create call repeated with its key is answered with the first response`` 
         Assert.Equal(first, retry)
         Assert.Equal<bool list>([ false; true ], stripe.Requests |> List.map (fun request -> request.Replayed))
     } |> Async.StartImmediateAsTask :> Task
+
+[<Fact>]
+let ``tryMinorUnits converts by the currency's minor unit`` () =
+    Assert.Equal(Some 1050, tryMinorUnits IsoCurrencyCode.USD 10.50m)
+    Assert.Equal(Some 1000, tryMinorUnits IsoCurrencyCode.JPY 1000m)
+    Assert.Equal(Some 5000, tryMinorUnits IsoCurrencyCode.KRW 5000m)
+    Assert.Equal(Some 10500, tryMinorUnits IsoCurrencyCode.KWD 10.5m)
+    Assert.Equal(Some 500, tryMinorUnits IsoCurrencyCode.ISK 5m)
+    Assert.Equal(Some 99999999, tryMinorUnits IsoCurrencyCode.USD 999999.99m)
+
+[<Fact>]
+let ``tryMinorUnits refuses what Stripe cannot charge instead of rounding`` () =
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.USD 10.005m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.JPY 1000.5m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.KWD 10.555m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.ISK 5.5m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.USD 0m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.USD -1m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.USD 1000000m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.JPY 100000000m)
+    Assert.Equal(None, tryMinorUnits IsoCurrencyCode.KWD Decimal.MaxValue)

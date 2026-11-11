@@ -2,7 +2,7 @@
 
 [**FunStripe**](https://github.com/simontreanor/FunStripe) is an F# library that provides a functional wrapper around the [Stripe](https://stripe.com/) API for payment processing. This guide demonstrates the essential patterns for integrating Stripe payments in your application.
 
-This repository uses the [FunStripe.Core](https://www.nuget.org/packages/FunStripe.Core/) NuGet package, version 3.1.1, which targets Stripe API version `2026-10-28.endive`. Since FunStripe 2.0 this is the only package: the code generators stay in the FunStripe repository, so `FunStripe.Core` is what `FunStripeLite` used to be (the library without the generators and their dependencies). This repository is not using the official Stripe.net .NET integration, as avoiding that is one of the key aims of the alternative, FunStripe.
+This repository uses the [FunStripe.Core](https://www.nuget.org/packages/FunStripe.Core/) NuGet package, version 3.3.0, which targets Stripe API version `2026-10-28.endive`. Since FunStripe 2.0 this is the only package: the code generators stay in the FunStripe repository, so `FunStripe.Core` is what `FunStripeLite` used to be (the library without the generators and their dependencies). This repository is not using the official Stripe.net .NET integration, as avoiding that is one of the key aims of the alternative, FunStripe.
 
 > **Note:** The F# code in `src/` and `webhooks/` calls FunStripe for real. With a Stripe test key configured, `dotnet run` creates customers, setup intents and payment intents in your Stripe test account. Without one it skips those calls and still runs the webhook demo, which needs no Stripe account.
 

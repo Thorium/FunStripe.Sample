@@ -210,7 +210,8 @@ let processEvent (stripeEvent: Event) =
                 let mandate = account.MandateId |> Option.defaultValue "none"
                 return Processed $"Bank account {account.PaymentMethodId} saved for {account.CustomerId} (mandate {mandate})"
             | None ->
-                return Failed $"Setup intent {setupIntent.Id} succeeded without a customer or payment method"
+                // Nothing to act on, and a retry brings the same event: acknowledge it (200), don't fail (500)
+                return UnsupportedEvent $"setup intent {setupIntent.Id} succeeded without a customer or payment method"
 
         | EventType.SetupIntentSetupFailed ->
             let setupIntent = stripeEvent |> eventObject<SetupIntent>

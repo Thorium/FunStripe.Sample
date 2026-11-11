@@ -97,6 +97,12 @@ let ``cartFingerprint changes with the cart but not with the order of its lines`
     Assert.Equal(16, (cartFingerprint cart).Length)
 
 [<Fact>]
+let ``checkoutStep differs for a cart that comes back after its session was expired`` () =
+    let cart = [ { Sku = "MUG-350"; Quantity = 2 } ]
+    Assert.Equal(checkoutStep 1 cart, checkoutStep 1 (List.rev cart))
+    Assert.NotEqual<string>(checkoutStep 1 cart, checkoutStep 2 cart)
+
+[<Fact>]
 let ``a cart that cannot be sold is rejected before Stripe is called`` () =
     let reasonFor cart =
         match checkoutSessionOptions shop catalog "order-1" None cart with

@@ -83,7 +83,8 @@ let parseCurrency (code: string) =
 
 /// Helper function to format amounts (Stripe uses the smallest currency unit).
 /// Only valid for two-decimal currencies (USD, EUR, GBP, ...); zero-decimal
-/// currencies such as JPY must not be multiplied by 100.
+/// currencies such as JPY must not be multiplied by 100. Use `tryMinorUnits` when the
+/// currency is not fixed.
 let formatAmount (dollars: decimal) = int (Math.Round(dollars * 100m))
 
 /// `formatAmount` for untrusted input: None unless the amount is positive, also after
@@ -95,6 +96,40 @@ let tryFormatAmount (dollars: decimal) =
         | amount -> Some amount
     else
         None
+
+/// Currencies whose Stripe amount is the amount itself (1000 JPY is `amount=1000`)
+let private zeroDecimalCurrencies =
+    set [
+        IsoCurrencyCode.BIF; IsoCurrencyCode.CLP; IsoCurrencyCode.DJF; IsoCurrencyCode.GNF; IsoCurrencyCode.JPY
+        IsoCurrencyCode.KMF; IsoCurrencyCode.KRW; IsoCurrencyCode.MGA; IsoCurrencyCode.PYG; IsoCurrencyCode.RWF
+        IsoCurrencyCode.VND; IsoCurrencyCode.VUV; IsoCurrencyCode.XAF; IsoCurrencyCode.XOF; IsoCurrencyCode.XPF
+    ]
+
+/// Currencies with three decimals. Stripe accepts them only to two: the last digit must be 0.
+let private threeDecimalCurrencies =
+    set [ IsoCurrencyCode.BHD; IsoCurrencyCode.JOD; IsoCurrencyCode.KWD; IsoCurrencyCode.OMR; IsoCurrencyCode.TND ]
+
+/// Currencies Stripe counts in two decimals but charges only in whole units (5 ISK is `amount=500`)
+let private wholeUnitCurrencies = set [ IsoCurrencyCode.ISK; IsoCurrencyCode.UGX ]
+
+/// An amount in the currency's main unit (10.50 USD, 1000 JPY) as Stripe's integer amount.
+/// None unless the amount is positive, exact in what Stripe can charge in that currency
+/// (nothing is rounded) and within the 8 digits Stripe accepts.
+let tryMinorUnits (currency: IsoCurrencyCode) (amount: decimal) =
+    // Checked before scaling: a huge untrusted amount must give None, not overflow the decimal
+    if amount <= 0m || amount > 99999999m then
+        None
+    else
+        let scaled, step =
+            if zeroDecimalCurrencies.Contains currency then amount, 1m
+            elif threeDecimalCurrencies.Contains currency then amount * 1000m, 10m
+            elif wholeUnitCurrencies.Contains currency then amount * 100m, 100m
+            else amount * 100m, 1m
+
+        if scaled <= 99999999m && scaled % step = 0m then
+            Some(int scaled)
+        else
+            None
 
 // Idempotency
 // ===========

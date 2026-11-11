@@ -146,8 +146,8 @@ let checkoutSessionOptions (shop: Shop) (catalog: Map<string, Product>) (orderId
 
 /// A short fingerprint of a cart, the same for the same SKUs and quantities in any order.
 /// Stripe rejects an idempotency key used again with other parameters, so the key of a
-/// Checkout Session needs it: `idempotencyKeyFor order $"checkout-{cartFingerprint cart}"`.
-/// A retry of the same checkout then gets the same session back, and a changed cart a new one.
+/// Checkout Session needs it (see `checkoutStep`). A retry of the same checkout then gets the
+/// same session back, and a changed cart a new one.
 /// (Change the step too when anything else that goes into the session changes, e.g. the email.)
 let cartFingerprint (cart: CartLine list) =
     let text =
@@ -159,8 +159,15 @@ let cartFingerprint (cart: CartLine list) =
     let hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes text)
     (System.Convert.ToHexString hash).Substring(0, 16).ToLowerInvariant()
 
+/// The idempotency step of an order's Checkout Session: `idempotencyKeyFor order (checkoutStep attempt cart)`.
+/// `attempt` is a number you store with the order and raise each time you expire its session.
+/// The cart alone is not enough: Stripe answers a repeated key with the stored response for
+/// 24 hours, so a cart changed back to an earlier one would get its expired session again.
+let checkoutStep (attempt: int) (cart: CartLine list) =
+    $"checkout-{attempt}-{cartFingerprint cart}"
+
 /// Creates the Checkout Session of an order. Redirect the customer to its `Url`. Derive the
-/// idempotency key from the order and the cart (see `cartFingerprint`).
+/// idempotency key from the order, the checkout attempt and the cart (see `checkoutStep`).
 let createCheckoutSession (settings: RestApi.StripeApiSettings) (idempotencyKey: IdempotencyKey) (shop: Shop) (catalog: Map<string, Product>) (orderId: string) (customerEmail: string option) (cart: CartLine list) =
     match checkoutSessionOptions shop catalog orderId customerEmail cart with
     | Error reason -> async { return Error reason }
@@ -245,8 +252,8 @@ let orderToFulfil (settings: RestApi.StripeApiSettings) (sessionId: string) =
         return orderOf session lineItems.Data
     }
 
-/// Ends an open session at once, e.g. when the cart changes and you create a new one (with a
-/// new idempotency key, see `cartFingerprint`)
+/// Ends an open session at once, e.g. when the cart changes and you create a new one. Raise
+/// the order's checkout attempt so that the new session gets a new idempotency key (see `checkoutStep`).
 let expireSession (settings: RestApi.StripeApiSettings) (sessionId: string) =
     CheckoutSessionsExpire.ExpireOptions.New(session = sessionId)
     |> CheckoutSessionsExpire.Expire settings

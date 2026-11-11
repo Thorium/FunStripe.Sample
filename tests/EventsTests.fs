@@ -91,11 +91,11 @@ let ``handleSetupSuccess returns Success without payment method`` () =
     } |> Async.StartImmediateAsTask :> Task
 
 [<Fact>]
-let ``handleSetupSuccess returns HandlerError without customer`` () =
+let ``handleSetupSuccess ignores a setup intent without customer`` () =
     async {
         match! handleSetupSuccess { setupIntent with Id = "seti_test_003"; Customer = None } with
-        | HandlerError msg -> Assert.Contains("seti_test_003", msg)
-        | Success _ | Ignored _ -> Assert.Fail("Expected HandlerError result")
+        | Ignored msg -> Assert.Contains("seti_test_003", msg)
+        | Success _ | HandlerError _ -> Assert.Fail("Expected Ignored result")
     } |> Async.StartImmediateAsTask :> Task
 
 // =============================================================================

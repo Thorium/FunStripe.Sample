@@ -238,3 +238,23 @@ let ``createSetupEndpoint sends one key per step`` () =
         let keys = stripe.Requests |> List.map (fun request -> request.IdempotencyKey)
         Assert.Equal<string option list>([ Some "signup-77:customer"; Some "signup-77:setup-intent" ], keys)
     } |> Async.StartImmediateAsTask :> Task
+
+[<Fact>]
+let ``createPaymentEndpoint sends a zero-decimal currency without multiplying`` () =
+    async {
+        use stripe = new FakeStripe(respondOk)
+        let request = {
+            Amount = 1000m
+            Currency = "jpy"
+            CustomerEmail = "test@example.com"
+            CustomerName = "Test User"
+            IdempotencyKey = "order-1042"
+        }
+        let! response = createPaymentEndpoint stripe.Settings request
+        Assert.True(response.Success)
+        match stripe.Requests with
+        | [ _; paymentRequest ] ->
+            Assert.Equal("1000", paymentRequest.Form.["amount"])
+            Assert.Equal("jpy", paymentRequest.Form.["currency"])
+        | requests -> Assert.Fail($"Expected two requests, got {requests.Length}")
+    } |> Async.StartImmediateAsTask :> Task

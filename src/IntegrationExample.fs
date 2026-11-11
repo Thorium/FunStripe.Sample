@@ -81,11 +81,14 @@ let private requireOperationId (idempotencyKey: string) =
     | None -> Error "Idempotency key is required"
 
 let private validatePaymentRequest (request: PaymentRequest) =
-    match requireOperationId request.IdempotencyKey, parseCurrency request.Currency, tryFormatAmount request.Amount with
-    | Error message, _, _ -> Error message
-    | _, None, _ -> Error "Unsupported currency"
-    | _, _, None -> Error "Invalid amount"
-    | Ok operationId, Some currency, Some amount -> Ok (operationId, currency, amount)
+    match requireOperationId request.IdempotencyKey, parseCurrency request.Currency with
+    | Error message, _ -> Error message
+    | _, None -> Error "Unsupported currency"
+    | Ok operationId, Some currency ->
+        // The minor unit depends on the currency: 1000 JPY is 1000, 10 USD is 1000
+        match tryMinorUnits currency request.Amount with
+        | Some amount -> Ok (operationId, currency, amount)
+        | None -> Error "Invalid amount"
 
 /// Example: Create customer and payment intent endpoint
 let createPaymentEndpoint (settings: RestApi.StripeApiSettings) (request: PaymentRequest) =

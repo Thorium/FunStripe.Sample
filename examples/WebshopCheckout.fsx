@@ -49,7 +49,7 @@ match scriptArgs with
     // What the browser sent: SKUs and quantities only
     let cart = [ { Sku = "MUG-350"; Quantity = 2 }; { Sku = "MUG-500"; Quantity = 1 } ]
     printf "Creating the Checkout Session of %s... " orderId
-    match createCheckoutSession settings (idempotencyKeyFor operation $"checkout-{cartFingerprint cart}") shop catalog orderId (Some "jenny.rosen+webshop@example.com") cart |> Async.RunSynchronously with
+    match createCheckoutSession settings (idempotencyKeyFor operation (checkoutStep 1 cart)) shop catalog orderId (Some "jenny.rosen+webshop@example.com") cart |> Async.RunSynchronously with
     | Ok session ->
         printfn "OK"
         printfn ""
